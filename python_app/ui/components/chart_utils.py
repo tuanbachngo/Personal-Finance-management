@@ -105,7 +105,7 @@ def render_multi_line_chart(
             alt.Tooltip("Value:Q", format=",.2f"),
         ],
     )
-    st.altair_chart(_base_chart_style(chart), width="stretch", theme=None)
+    st.altair_chart(_base_chart_style(chart), use_container_width=True, theme=None)
 
 
 def render_grouped_bar_chart(
@@ -170,7 +170,7 @@ def render_grouped_bar_chart(
         ],
     )
 
-    st.altair_chart(_base_chart_style(chart), width="stretch", theme=None)
+    st.altair_chart(_base_chart_style(chart), use_container_width=True, theme=None)
 
 
 def render_single_bar_chart(
@@ -215,7 +215,7 @@ def render_single_bar_chart(
             alt.Tooltip(f"{value_field}:Q", format=",.2f", title=value_title),
         ],
     )
-    st.altair_chart(_base_chart_style(chart), width="stretch", theme=None)
+    st.altair_chart(_base_chart_style(chart), use_container_width=True, theme=None)
 
 
 def render_pie_chart(
@@ -260,4 +260,4 @@ def render_pie_chart(
         ],
     )
 
-    st.altair_chart(_base_chart_style(chart), width="stretch", theme=None)
+    st.altair_chart(_base_chart_style(chart), use_container_width=True, theme=None)
