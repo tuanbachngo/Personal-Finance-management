@@ -13,6 +13,89 @@ except ImportError:
     from python_app.db_config import DatabaseConfig
 
 
+def configure_connection_charset(connection, config: Optional[DatabaseConfig] = None) -> None:
+    """Force a consistent utf8mb4 session charset/collation on an open connection."""
+    if connection is None:
+        return
+
+    try:
+        if not connection.is_connected():
+            return
+    except Exception:
+        return
+
+    active_config = config or DatabaseConfig.from_env()
+    charset = active_config.charset
+    collation = active_config.collation
+
+    try:
+        connection.set_charset_collation(charset, collation)
+        return
+    except AttributeError:
+        pass
+    except TypeError:
+        try:
+            connection.set_charset_collation(
+                charset=charset,
+                collation=collation,
+            )
+            return
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    cursor = connection.cursor()
+    try:
+        cursor.execute(
+            f"SET NAMES '{charset}' COLLATE '{collation}'"
+        )
+    finally:
+        cursor.close()
+
+
+def ensure_connection_ready(
+    connection,
+    config: Optional[DatabaseConfig] = None,
+    reconnect: bool = True,
+) -> bool:
+    """
+    Return True when a connection is alive and ready for queries.
+
+    For cloud-hosted MySQL, ping(reconnect=True) helps recover stale sockets
+    between Streamlit reruns without changing normal local behavior.
+    """
+    if connection is None:
+        return False
+
+    try:
+        try:
+            connection.ping(reconnect=reconnect, attempts=2, delay=0)
+        except TypeError:
+            connection.ping(reconnect=reconnect)
+        configure_connection_charset(connection, config)
+        return bool(connection.is_connected())
+    except Error:
+        return False
+    except Exception:
+        try:
+            return bool(connection.is_connected())
+        except Exception:
+            return False
+
+
+def close_connection_safely(connection) -> None:
+    """Close a MySQL connection without surfacing cleanup errors."""
+    if connection is None:
+        return
+
+    try:
+        if connection.is_connected():
+            connection.close()
+    except Exception:
+        pass
+
+
 class MySQLConnectionManager:
     """
     Small context manager for opening/closing a MySQL connection safely.
@@ -24,36 +107,7 @@ class MySQLConnectionManager:
 
     def _configure_connection_charset(self) -> None:
         """Force a consistent utf8mb4 session charset/collation."""
-        if not self.connection or not self.connection.is_connected():
-            return
-
-        charset = self.config.charset
-        collation = self.config.collation
-
-        try:
-            self.connection.set_charset_collation(charset, collation)
-            return
-        except AttributeError:
-            pass
-        except TypeError:
-            try:
-                self.connection.set_charset_collation(
-                    charset=charset,
-                    collation=collation,
-                )
-                return
-            except Exception:
-                pass
-        except Exception:
-            pass
-
-        cursor = self.connection.cursor()
-        try:
-            cursor.execute(
-                f"SET NAMES '{charset}' COLLATE '{collation}'"
-            )
-        finally:
-            cursor.close()
+        configure_connection_charset(self.connection, self.config)
 
     def connect(self):
         """Open a MySQL connection."""
@@ -72,8 +126,7 @@ class MySQLConnectionManager:
 
     def close(self) -> None:
         """Close the connection if open."""
-        if self.connection and self.connection.is_connected():
-            self.connection.close()
+        close_connection_safely(self.connection)
 
     def __enter__(self):
         return self.connect()

@@ -6,11 +6,37 @@ from typing import Any, Dict, List, Optional
 import streamlit as st
 
 try:
-    from db_connection import get_connection
+    from db_connection import (
+        close_connection_safely,
+        ensure_connection_ready,
+        get_connection,
+    )
     from services.finance_service import FinanceService
 except ImportError:
-    from python_app.db_connection import get_connection
+    from python_app.db_connection import (
+        close_connection_safely,
+        ensure_connection_ready,
+        get_connection,
+    )
     from python_app.services.finance_service import FinanceService
+
+
+def _create_finance_service() -> FinanceService:
+    """Open a fresh connection + service pair and store them in session state."""
+    connection = get_connection()
+    service = FinanceService(connection)
+    st.session_state["db_connection"] = connection
+    st.session_state["finance_service"] = service
+    return service
+
+
+def _reset_finance_service() -> FinanceService:
+    """Dispose stale objects and recreate a clean FinanceService instance."""
+    stale_connection = st.session_state.get("db_connection")
+    close_connection_safely(stale_connection)
+    st.session_state.pop("db_connection", None)
+    st.session_state.pop("finance_service", None)
+    return _create_finance_service()
 
 
 def get_finance_service() -> FinanceService:
@@ -18,14 +44,14 @@ def get_finance_service() -> FinanceService:
     service = st.session_state.get("finance_service")
     connection = st.session_state.get("db_connection")
 
-    if service is not None and connection is not None and connection.is_connected():
+    if (
+        service is not None
+        and connection is not None
+        and ensure_connection_ready(connection)
+    ):
         return service
 
-    connection = get_connection()
-    service = FinanceService(connection)
-    st.session_state["db_connection"] = connection
-    st.session_state["finance_service"] = service
-    return service
+    return _reset_finance_service()
 
 
 def initialize_auth_state() -> None:
