@@ -338,40 +338,26 @@ class UserRepository:
     ) -> int:
         """
         Create or update UserCredentials row for an existing user.
+
+        We intentionally use an explicit insert/update branch instead of
+        relying only on ON DUPLICATE KEY UPDATE. This keeps the flow easier
+        to debug across different MySQL environments and lets us verify that
+        the credentials row really exists after the write.
         """
-        query = """
-            INSERT INTO UserCredentials (
-                UserID, PasswordHash, PasswordSalt, HashAlgorithm, UserRole, IsActive,
-                RecoveryHint, RecoveryAnswerHash, FailedLoginCount, LastFailedAt, LockUntil, LastLoginAt
-            )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 0, NULL, NULL, NULL)
-            ON DUPLICATE KEY UPDATE
-                PasswordHash = VALUES(PasswordHash),
-                PasswordSalt = VALUES(PasswordSalt),
-                HashAlgorithm = VALUES(HashAlgorithm),
-                UserRole = VALUES(UserRole),
-                IsActive = VALUES(IsActive),
-                RecoveryHint = VALUES(RecoveryHint),
-                RecoveryAnswerHash = VALUES(RecoveryAnswerHash),
-                FailedLoginCount = CASE
-                    WHEN %s THEN 0
-                    ELSE FailedLoginCount
-                END,
-                LastFailedAt = CASE
-                    WHEN %s THEN NULL
-                    ELSE LastFailedAt
-                END,
-                LockUntil = CASE
-                    WHEN %s THEN NULL
-                    ELSE LockUntil
-                END
-        """
+        existing = self.get_user_credentials_by_user_id(user_id)
         cursor = self.connection.cursor()
         try:
-            cursor.execute(
-                query,
-                (
-                    user_id,
+            if existing:
+                updates = [
+                    "PasswordHash = %s",
+                    "PasswordSalt = %s",
+                    "HashAlgorithm = %s",
+                    "UserRole = %s",
+                    "IsActive = %s",
+                    "RecoveryHint = %s",
+                    "RecoveryAnswerHash = %s",
+                ]
+                params: List[Any] = [
                     password_hash,
                     password_salt,
                     hash_algorithm,
@@ -379,13 +365,71 @@ class UserRepository:
                     is_active,
                     recovery_hint,
                     recovery_answer_hash,
-                    reset_security_state,
-                    reset_security_state,
-                    reset_security_state,
-                ),
-            )
+                ]
+                if reset_security_state:
+                    updates.extend(
+                        [
+                            "FailedLoginCount = %s",
+                            "LastFailedAt = %s",
+                            "LockUntil = %s",
+                        ]
+                    )
+                    params.extend([0, None, None])
+
+                query = f"""
+                    UPDATE UserCredentials
+                    SET {", ".join(updates)}
+                    WHERE UserID = %s
+                """
+                params.append(user_id)
+                cursor.execute(query, tuple(params))
+            else:
+                query = """
+                    INSERT INTO UserCredentials (
+                        UserID,
+                        PasswordHash,
+                        PasswordSalt,
+                        HashAlgorithm,
+                        UserRole,
+                        IsActive,
+                        RecoveryHint,
+                        RecoveryAnswerHash,
+                        FailedLoginCount,
+                        LastFailedAt,
+                        LockUntil,
+                        LastLoginAt
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """
+                cursor.execute(
+                    query,
+                    (
+                        user_id,
+                        password_hash,
+                        password_salt,
+                        hash_algorithm,
+                        user_role,
+                        is_active,
+                        recovery_hint,
+                        recovery_answer_hash,
+                        0 if reset_security_state else int((existing or {}).get("FailedLoginCount", 0)),
+                        None,
+                        None,
+                        (existing or {}).get("LastLoginAt"),
+                    ),
+                )
+
             self.connection.commit()
+
+            verified = self.get_user_credentials_by_user_id(user_id)
+            if not verified:
+                raise RuntimeError(
+                    f"Failed to persist UserCredentials row for UserID {user_id}."
+                )
             return cursor.rowcount
+        except Exception:
+            self.connection.rollback()
+            raise
         finally:
             cursor.close()
 
