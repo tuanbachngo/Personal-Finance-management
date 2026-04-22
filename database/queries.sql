@@ -119,6 +119,7 @@ SELECT
     t.AccountID,
     t.BankName,
     t.TransactionType,
+    t.TransactionID,
     t.TransactionDate,
     t.Amount,
     t.Description
@@ -129,6 +130,7 @@ FROM (
         ba.AccountID,
         ba.BankName,
         'INCOME' AS TransactionType,
+        i.IncomeID AS TransactionID,
         i.IncomeDate AS TransactionDate,
         i.Amount,
         i.Description
@@ -144,6 +146,7 @@ FROM (
         ba.AccountID,
         ba.BankName,
         'EXPENSE' AS TransactionType,
+        e.ExpenseID AS TransactionID,
         e.ExpenseDate AS TransactionDate,
         e.Amount,
         e.Description
@@ -151,15 +154,24 @@ FROM (
     JOIN Users u ON e.UserID = u.UserID
     JOIN BankAccounts ba ON e.AccountID = ba.AccountID AND e.UserID = ba.UserID
 ) t
-ORDER BY t.UserID, t.AccountID, t.TransactionDate;
+ORDER BY
+    t.UserID,
+    t.AccountID,
+    t.TransactionDate,
+    CASE
+        WHEN t.TransactionType COLLATE utf8mb4_0900_ai_ci
+             = _utf8mb4'INCOME' COLLATE utf8mb4_0900_ai_ci THEN 1
+        ELSE 2
+    END,
+    t.TransactionID;
 
 -- 9. DAILY EXPENSE SUMMARY
 SELECT
-    ExpenseDate,
+    DATE(ExpenseDate) AS ExpenseDay,
     SUM(Amount) AS DailyExpense
 FROM Expenses
-GROUP BY ExpenseDate
-ORDER BY ExpenseDate;
+GROUP BY DATE(ExpenseDate)
+ORDER BY ExpenseDay;
 
 -- 10. COMPARE CALCULATED BALANCE WITH STORED BALANCE
 SELECT
@@ -219,3 +231,116 @@ JOIN Users u ON e.UserID = u.UserID
 JOIN BankAccounts ba ON e.AccountID = ba.AccountID AND e.UserID = ba.UserID
 JOIN ExpenseCategories c ON e.CategoryID = c.CategoryID
 ORDER BY e.ExpenseID;
+
+-- 12. YEARLY INCOME, EXPENSE, AND NET SAVING SUMMARY
+SELECT
+    ReportYear,
+    SUM(TotalIncome) AS YearlyIncome,
+    SUM(TotalExpense) AS YearlyExpense,
+    SUM(TotalIncome) - SUM(TotalExpense) AS NetSaving
+FROM (
+    SELECT
+        YEAR(IncomeDate) AS ReportYear,
+        SUM(Amount) AS TotalIncome,
+        0 AS TotalExpense
+    FROM Income
+    GROUP BY YEAR(IncomeDate)
+
+    UNION ALL
+
+    SELECT
+        YEAR(ExpenseDate) AS ReportYear,
+        0 AS TotalIncome,
+        SUM(Amount) AS TotalExpense
+    FROM Expenses
+    GROUP BY YEAR(ExpenseDate)
+) yearly_data
+GROUP BY ReportYear
+ORDER BY ReportYear;
+
+-- 13. MONTHLY CATEGORY SPENDING TREND
+SELECT
+    DATE_FORMAT(e.ExpenseDate, '%Y-%m') AS YearMonth,
+    c.CategoryID,
+    c.CategoryName,
+    SUM(e.Amount) AS TotalSpent
+FROM Expenses e
+JOIN ExpenseCategories c ON e.CategoryID = c.CategoryID
+GROUP BY
+    DATE_FORMAT(e.ExpenseDate, '%Y-%m'),
+    c.CategoryID,
+    c.CategoryName
+ORDER BY YearMonth, TotalSpent DESC, c.CategoryID;
+
+-- 14. BUDGET PLANS BY USER/CATEGORY/MONTH
+SELECT
+    b.BudgetID,
+    b.UserID,
+    u.UserName,
+    b.CategoryID,
+    c.CategoryName,
+    b.BudgetYear,
+    b.BudgetMonth,
+    b.PlannedAmount,
+    b.WarningPercent
+FROM BudgetPlans b
+JOIN Users u ON b.UserID = u.UserID
+JOIN ExpenseCategories c ON b.CategoryID = c.CategoryID
+ORDER BY b.BudgetYear, b.BudgetMonth, b.UserID, b.CategoryID;
+
+-- 15. BUDGET VS ACTUAL (MONTHLY)
+SELECT
+    BudgetID,
+    UserID,
+    UserName,
+    CategoryID,
+    CategoryName,
+    BudgetYear,
+    BudgetMonth,
+    PlannedAmount,
+    SpentAmount,
+    RemainingBudget,
+    AlertLevel
+FROM vw_budget_vs_actual_monthly
+ORDER BY BudgetYear, BudgetMonth, UserID, CategoryID;
+
+-- 16. ACTIVE SPENDING LIMIT ALERTS
+SELECT
+    UserID,
+    UserName,
+    CategoryID,
+    CategoryName,
+    BudgetYear,
+    BudgetMonth,
+    PlannedAmount,
+    SpentAmount,
+    RemainingBudget,
+    AlertLevel
+FROM vw_spending_limit_alerts
+ORDER BY
+    AlertSortOrder,
+    UserID,
+    CategoryID;
+
+-- 17. BALANCE HISTORY (RUNNING BALANCE BY ACCOUNT)
+SELECT
+    UserID,
+    UserName,
+    AccountID,
+    BankName,
+    TransactionDate,
+    TransactionType,
+    ReferenceID,
+    AmountSigned,
+    RunningBalance
+FROM vw_account_balance_history
+ORDER BY
+    UserID,
+    AccountID,
+    TransactionDate,
+    CASE
+        WHEN TransactionType COLLATE utf8mb4_0900_ai_ci
+             = _utf8mb4'INCOME' COLLATE utf8mb4_0900_ai_ci THEN 1
+        ELSE 2
+    END,
+    ReferenceID;

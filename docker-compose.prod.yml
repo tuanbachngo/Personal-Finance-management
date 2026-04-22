@@ -1,0 +1,95 @@
+x-python-build: &python-build
+  context: .
+  dockerfile: Dockerfile
+
+x-python-image: &python-image personal_finance_python:prod
+
+x-app-env: &app-env
+  MYSQL_HOST: ${MYSQL_HOST:?Set MYSQL_HOST in .env.production}
+  MYSQL_PORT: ${MYSQL_PORT:-3306}
+  MYSQL_USER: ${MYSQL_USER:?Set MYSQL_USER in .env.production}
+  MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env.production}
+  MYSQL_DATABASE: Personal_Finance
+  AUTH_DEV_MODE: ${AUTH_DEV_MODE:-false}
+  AUTH_LOG_OTP_IN_DEV: ${AUTH_LOG_OTP_IN_DEV:-false}
+
+services:
+  app:
+    build: *python-build
+    image: *python-image
+    restart: unless-stopped
+    environment:
+      <<: *app-env
+    expose:
+      - "8501"
+    command:
+      [
+        "streamlit",
+        "run",
+        "python_app/streamlit_app.py",
+        "--server.address=0.0.0.0",
+        "--server.port=8501",
+        "--browser.gatherUsageStats=false"
+      ]
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - app
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?Set APP_DOMAIN in .env.production}
+      CADDY_EMAIL: ${CADDY_EMAIL:?Set CADDY_EMAIL in .env.production}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  db-reset-remote:
+    build: *python-build
+    image: *python-image
+    profiles: ["setup"]
+    environment:
+      <<: *app-env
+    command: ["sh", "ops/linux/reset_remote_db.sh"]
+
+  db-apply-views-remote:
+    build: *python-build
+    image: *python-image
+    profiles: ["setup"]
+    environment:
+      <<: *app-env
+    command: ["sh", "ops/linux/apply_remote_views.sh"]
+
+  bootstrap-admin:
+    build: *python-build
+    image: *python-image
+    profiles: ["setup"]
+    environment:
+      <<: *app-env
+      PF_ADMIN_EMAIL: ${PF_ADMIN_EMAIL:?Set PF_ADMIN_EMAIL in .env.production}
+      PF_ADMIN_PASSWORD: ${PF_ADMIN_PASSWORD:?Set PF_ADMIN_PASSWORD in .env.production}
+      PF_ADMIN_NAME: ${PF_ADMIN_NAME:-System Admin}
+      PF_ADMIN_PHONE: ${PF_ADMIN_PHONE:-}
+      PF_ADMIN_RECOVERY_HINT: ${PF_ADMIN_RECOVERY_HINT:-}
+      PF_ADMIN_RECOVERY_ANSWER: ${PF_ADMIN_RECOVERY_ANSWER:-}
+      PF_SEED_SAMPLE_USER_PASSWORD: ${PF_SEED_SAMPLE_USER_PASSWORD:-}
+      PF_FORCE_RESET_SAMPLE_PASSWORDS: ${PF_FORCE_RESET_SAMPLE_PASSWORDS:-false}
+    command: ["python", "ops/bootstrap_auth.py"]
+
+  smoke-test:
+    build: *python-build
+    image: *python-image
+    profiles: ["tools"]
+    environment:
+      <<: *app-env
+      SMOKE_ADMIN_EMAIL: ${SMOKE_ADMIN_EMAIL:?Set SMOKE_ADMIN_EMAIL in .env.production}
+      SMOKE_ADMIN_PASSWORD: ${SMOKE_ADMIN_PASSWORD:?Set SMOKE_ADMIN_PASSWORD in .env.production}
+    command: ["python", "python_app/smoke_test.py"]
+
+volumes:
+  caddy_data:
+  caddy_config:

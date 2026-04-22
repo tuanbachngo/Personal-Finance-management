@@ -1,0 +1,128 @@
+x-python-build: &python-build
+  context: .
+  dockerfile: Dockerfile
+
+x-python-image: &python-image personal_finance_python:dev
+
+services:
+  db:
+    image: mysql:8.4
+    container_name: personal_finance_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env.docker}
+      MYSQL_DATABASE: Personal_Finance
+      MYSQL_INITDB_SKIP_TZINFO: 1
+    ports:
+      - "${MYSQL_LOCAL_PORT:-3307}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+
+  app:
+    build: *python-build
+    image: *python-image
+    container_name: personal_finance_app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      MYSQL_HOST: db
+      MYSQL_PORT: 3306
+      MYSQL_USER: root
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: Personal_Finance
+      AUTH_DEV_MODE: ${AUTH_DEV_MODE:-false}
+      AUTH_LOG_OTP_IN_DEV: ${AUTH_LOG_OTP_IN_DEV:-false}
+    ports:
+      - "${STREAMLIT_LOCAL_PORT:-8501}:8501"
+    command:
+      [
+        "streamlit",
+        "run",
+        "python_app/streamlit_app.py",
+        "--server.address=0.0.0.0",
+        "--server.port=8501",
+        "--browser.gatherUsageStats=false"
+      ]
+
+  db-reset:
+    build: *python-build
+    image: *python-image
+    profiles: ["setup"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      MYSQL_HOST: db
+      MYSQL_PORT: 3306
+      MYSQL_USER: root
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: Personal_Finance
+    command: ["sh", "ops/docker/reset_database.sh"]
+
+  db-apply-views:
+    build: *python-build
+    image: *python-image
+    profiles: ["setup"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      MYSQL_HOST: db
+      MYSQL_PORT: 3306
+      MYSQL_USER: root
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: Personal_Finance
+    command: ["sh", "ops/docker/apply_views.sh"]
+
+  bootstrap-admin:
+    build: *python-build
+    image: *python-image
+    profiles: ["setup"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      MYSQL_HOST: db
+      MYSQL_PORT: 3306
+      MYSQL_USER: root
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: Personal_Finance
+      PF_ADMIN_EMAIL: ${PF_ADMIN_EMAIL}
+      PF_ADMIN_PASSWORD: ${PF_ADMIN_PASSWORD}
+      PF_ADMIN_NAME: ${PF_ADMIN_NAME:-System Admin}
+      PF_ADMIN_PHONE: ${PF_ADMIN_PHONE:-}
+      PF_ADMIN_RECOVERY_HINT: ${PF_ADMIN_RECOVERY_HINT:-}
+      PF_ADMIN_RECOVERY_ANSWER: ${PF_ADMIN_RECOVERY_ANSWER:-}
+      PF_SEED_SAMPLE_USER_PASSWORD: ${PF_SEED_SAMPLE_USER_PASSWORD:-}
+      PF_FORCE_RESET_SAMPLE_PASSWORDS: ${PF_FORCE_RESET_SAMPLE_PASSWORDS:-false}
+    command: ["python", "ops/bootstrap_auth.py"]
+
+  smoke-test:
+    build: *python-build
+    image: *python-image
+    profiles: ["tools"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      MYSQL_HOST: db
+      MYSQL_PORT: 3306
+      MYSQL_USER: root
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: Personal_Finance
+      SMOKE_ADMIN_EMAIL: ${SMOKE_ADMIN_EMAIL}
+      SMOKE_ADMIN_PASSWORD: ${SMOKE_ADMIN_PASSWORD}
+      AUTH_DEV_MODE: ${AUTH_DEV_MODE:-false}
+      AUTH_LOG_OTP_IN_DEV: ${AUTH_LOG_OTP_IN_DEV:-false}
+    command: ["python", "python_app/smoke_test.py"]
+
+volumes:
+  mysql_data:

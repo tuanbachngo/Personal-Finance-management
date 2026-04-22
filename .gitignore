@@ -1,0 +1,16 @@
+# Python cache / virtual env
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local secret/config files (never commit real secrets)
+.env
+.env.local
+.env.docker
+.env.production
+.env.production.local
+.streamlit/secrets.toml
+
+# Optional local backup artifacts
+backups/

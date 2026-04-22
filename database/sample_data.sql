@@ -1,15 +1,25 @@
 -- Canonical sample data file for the Personal Finance Management System.
 -- Run this after schema.sql.
+-- Data range: January 2025 -> April 2026 (more than 12 months).
 
 USE Personal_Finance;
 
--- 1. USERS
+-- 1. USERS (10 users)
 INSERT INTO Users (UserID, UserName, Email, PhoneNumber) VALUES
 (1, 'Nguyen Minh Anh', 'minhanh@gmail.com', '0901000001'),
 (2, 'Tran Quoc Bao', 'quocbao@gmail.com', '0901000002'),
 (3, 'Le Thu Ha', 'thuha@gmail.com', '0901000003'),
 (4, 'Pham Gia Huy', 'giahuy@gmail.com', '0901000004'),
-(5, 'Do Ngoc Linh', 'ngoclinh@gmail.com', '0901000005');
+(5, 'Do Ngoc Linh', 'ngoclinh@gmail.com', '0901000005'),
+(6, 'Vu Khanh Nam', 'khanhnam@gmail.com', '0901000006'),
+(7, 'Bui Thanh Mai', 'thanhmai@gmail.com', '0901000007'),
+(8, 'Phan Duc Long', 'duclong@gmail.com', '0901000008'),
+(9, 'Dang Bao Chau', 'baochau@gmail.com', '0901000009'),
+(10, 'Ngo Tuan Bach', 'tuanbachngo@gmail.com', '0901000010');
+
+-- 1.1 USER CREDENTIALS (APP-LEVEL AUTH)
+-- Credentials are intentionally not seeded with hard-coded passwords.
+-- Use `ops/bootstrap_auth.py` with local environment variables after reset.
 
 -- 2. EXPENSE CATEGORIES
 INSERT INTO ExpenseCategories (CategoryID, CategoryName) VALUES
@@ -31,35 +41,450 @@ INSERT INTO BankAccounts (AccountID, UserID, BankName, Balance) VALUES
 (4, 3, 'ACB', 0.00),
 (5, 4, 'MB Bank', 0.00),
 (6, 5, 'VietinBank', 0.00),
-(7, 5, 'TPBank', 0.00);
+(7, 5, 'TPBank', 0.00),
+(8, 6, 'Sacombank', 0.00),
+(9, 7, 'VPBank', 0.00),
+(10, 8, 'Agribank', 0.00),
+(11, 9, 'SHB', 0.00),
+(12, 10, 'HDBank', 0.00);
 
 -- 4. INCOME
-INSERT INTO Income (IncomeID, UserID, AccountID, Amount, IncomeDate, Description) VALUES
-(1, 1, 1, 18000000.00, '2026-03-01', 'Monthly salary'),
-(2, 1, 2, 3500000.00, '2026-03-15', 'Freelance design project'),
-(3, 1, 1, 1500000.00, '2026-03-20', 'Family support'),
-(4, 2, 3, 14000000.00, '2026-03-01', 'Monthly salary'),
-(5, 2, 3, 2000000.00, '2026-03-18', 'Performance bonus'),
-(6, 3, 4, 12000000.00, '2026-03-01', 'Monthly salary'),
-(7, 3, 4, 2500000.00, '2026-03-22', 'Tutoring income'),
-(8, 4, 5, 20000000.00, '2026-03-01', 'Monthly salary'),
-(9, 5, 6, 16000000.00, '2026-03-01', 'Monthly salary'),
-(10, 5, 7, 4200000.00, '2026-03-24', 'Online business income');
+-- 4.1 Primary monthly income by profile (all months from 2025-01 to 2026-04)
+INSERT INTO Income (UserID, AccountID, Amount, IncomeDate, Description)
+WITH RECURSIVE months AS (
+    SELECT DATE('2025-01-01') AS MonthStart, 1 AS MonthNo
+    UNION ALL
+    SELECT DATE_ADD(MonthStart, INTERVAL 1 MONTH), MonthNo + 1
+    FROM months
+    WHERE MonthStart < DATE('2026-04-01')
+),
+income_profiles AS (
+    SELECT 1 AS UserID, 1 AS AccountID, 20000000.00 AS BaseIncome, 'Monthly salary' AS IncomeSource
+    UNION ALL SELECT 2, 3, 16000000.00, 'Monthly salary'
+    UNION ALL SELECT 3, 4, 13000000.00, 'Monthly salary'
+    UNION ALL SELECT 4, 5, 23000000.00, 'Monthly salary'
+    UNION ALL SELECT 5, 6, 17500000.00, 'Monthly salary'
+    UNION ALL SELECT 6, 8, 9000000.00, 'Main salary (variable)'
+    UNION ALL SELECT 7, 9, 14500000.00, 'Monthly salary'
+    UNION ALL SELECT 8, 10, 12500000.00, 'Monthly salary'
+    UNION ALL SELECT 9, 11, 11000000.00, 'Monthly salary'
+    UNION ALL SELECT 10, 12, 15000000.00, 'Monthly salary'
+)
+SELECT
+    p.UserID,
+    p.AccountID,
+    p.BaseIncome
+    + CASE
+        WHEN p.UserID = 6 THEN
+            CASE MOD(m.MonthNo, 4)
+                WHEN 0 THEN -2200000.00
+                WHEN 1 THEN 0.00
+                WHEN 2 THEN 1500000.00
+                ELSE -700000.00
+            END
+        ELSE 0.00
+      END
+    + CASE
+        WHEN p.UserID = 10 AND MOD(m.MonthNo, 3) = 0 THEN 1800000.00
+        ELSE 0.00
+      END AS Amount,
+    TIMESTAMP(m.MonthStart, '08:00:00') AS IncomeDate,
+    CONCAT(p.IncomeSource, ' - ', DATE_FORMAT(m.MonthStart, '%Y-%m')) AS Description
+FROM months m
+JOIN income_profiles p ON 1 = 1;
+
+-- 4.2 User 1: freelance income on second account (even months)
+INSERT INTO Income (UserID, AccountID, Amount, IncomeDate, Description)
+WITH RECURSIVE months AS (
+    SELECT DATE('2025-01-01') AS MonthStart, 1 AS MonthNo
+    UNION ALL
+    SELECT DATE_ADD(MonthStart, INTERVAL 1 MONTH), MonthNo + 1
+    FROM months
+    WHERE MonthStart < DATE('2026-04-01')
+)
+SELECT
+    1,
+    2,
+    3500000.00,
+    TIMESTAMP(DATE_ADD(MonthStart, INTERVAL 14 DAY), '19:30:00'),
+    CONCAT('Freelance design income - ', DATE_FORMAT(MonthStart, '%Y-%m'))
+FROM months
+WHERE MOD(MonthNo, 2) = 0;
+
+-- 4.3 User 3: tutoring income (odd months)
+INSERT INTO Income (UserID, AccountID, Amount, IncomeDate, Description)
+WITH RECURSIVE months AS (
+    SELECT DATE('2025-01-01') AS MonthStart, 1 AS MonthNo
+    UNION ALL
+    SELECT DATE_ADD(MonthStart, INTERVAL 1 MONTH), MonthNo + 1
+    FROM months
+    WHERE MonthStart < DATE('2026-04-01')
+)
+SELECT
+    3,
+    4,
+    1800000.00,
+    TIMESTAMP(DATE_ADD(MonthStart, INTERVAL 21 DAY), '20:10:00'),
+    CONCAT('Tutoring income - ', DATE_FORMAT(MonthStart, '%Y-%m'))
+FROM months
+WHERE MOD(MonthNo, 2) = 1;
+
+-- 4.4 User 5: online business income on second account (all months)
+INSERT INTO Income (UserID, AccountID, Amount, IncomeDate, Description)
+WITH RECURSIVE months AS (
+    SELECT DATE('2025-01-01') AS MonthStart, 1 AS MonthNo
+    UNION ALL
+    SELECT DATE_ADD(MonthStart, INTERVAL 1 MONTH), MonthNo + 1
+    FROM months
+    WHERE MonthStart < DATE('2026-04-01')
+)
+SELECT
+    5,
+    7,
+    2200000.00 + CASE WHEN MOD(MonthNo, 3) = 0 THEN 900000.00 ELSE 0.00 END,
+    TIMESTAMP(DATE_ADD(MonthStart, INTERVAL 14 DAY), '21:20:00'),
+    CONCAT('Online business income - ', DATE_FORMAT(MonthStart, '%Y-%m'))
+FROM months;
+
+-- 4.5 User 8: quarterly scholarship/side income
+INSERT INTO Income (UserID, AccountID, Amount, IncomeDate, Description)
+WITH RECURSIVE months AS (
+    SELECT DATE('2025-01-01') AS MonthStart, 1 AS MonthNo
+    UNION ALL
+    SELECT DATE_ADD(MonthStart, INTERVAL 1 MONTH), MonthNo + 1
+    FROM months
+    WHERE MonthStart < DATE('2026-04-01')
+)
+SELECT
+    8,
+    10,
+    1200000.00,
+    TIMESTAMP(DATE_ADD(MonthStart, INTERVAL 24 DAY), '20:00:00'),
+    CONCAT('Quarterly scholarship - ', DATE_FORMAT(MonthStart, '%Y-%m'))
+FROM months
+WHERE MOD(MonthNo, 3) = 0;
+
+-- 4.6 User 9: overtime income (even months)
+INSERT INTO Income (UserID, AccountID, Amount, IncomeDate, Description)
+WITH RECURSIVE months AS (
+    SELECT DATE('2025-01-01') AS MonthStart, 1 AS MonthNo
+    UNION ALL
+    SELECT DATE_ADD(MonthStart, INTERVAL 1 MONTH), MonthNo + 1
+    FROM months
+    WHERE MonthStart < DATE('2026-04-01')
+)
+SELECT
+    9,
+    11,
+    1000000.00,
+    TIMESTAMP(DATE_ADD(MonthStart, INTERVAL 17 DAY), '19:40:00'),
+    CONCAT('Overtime income - ', DATE_FORMAT(MonthStart, '%Y-%m'))
+FROM months
+WHERE MOD(MonthNo, 2) = 0;
 
 -- 5. EXPENSES
-INSERT INTO Expenses (ExpenseID, UserID, AccountID, CategoryID, Amount, ExpenseDate, Description) VALUES
-(1, 1, 1, 8, 3200000.00, '2026-03-05', 'Monthly room rent'),
-(2, 1, 1, 1, 850000.00, '2026-03-08', 'Groceries and meals'),
-(3, 1, 1, 7, 1200000.00, '2026-03-12', 'Electricity and water bill'),
-(4, 1, 2, 4, 450000.00, '2026-03-18', 'Cinema and coffee'),
-(5, 2, 3, 8, 4200000.00, '2026-03-06', 'Apartment rent'),
-(6, 2, 3, 2, 350000.00, '2026-03-14', 'Fuel and parking'),
-(7, 3, 4, 6, 450000.00, '2026-03-11', 'Medical checkup'),
-(8, 4, 5, 3, 1200000.00, '2026-03-25', 'English course fee'),
-(9, 5, 6, 8, 3000000.00, '2026-03-04', 'House rent'),
-(10, 5, 7, 5, 550000.00, '2026-03-21', 'Clothing purchase');
+-- 5.1 Base monthly expenses by profile: rent, food, transportation
+INSERT INTO Expenses (UserID, AccountID, CategoryID, Amount, ExpenseDate, Description)
+WITH RECURSIVE months AS (
+    SELECT DATE('2025-01-01') AS MonthStart
+    UNION ALL
+    SELECT DATE_ADD(MonthStart, INTERVAL 1 MONTH)
+    FROM months
+    WHERE MonthStart < DATE('2026-04-01')
+),
+expense_profiles AS (
+    SELECT 1 AS UserID, 1 AS AccountID, 3500000.00 AS RentAmt, 2200000.00 AS FoodAmt, 1000000.00 AS TransportAmt
+    UNION ALL SELECT 2, 3, 6000000.00, 2500000.00, 1200000.00
+    UNION ALL SELECT 3, 4, 4000000.00, 2000000.00, 800000.00
+    UNION ALL SELECT 4, 5, 5000000.00, 2600000.00, 1100000.00
+    UNION ALL SELECT 5, 6, 4500000.00, 2300000.00, 1100000.00
+    UNION ALL SELECT 6, 8, 2500000.00, 1600000.00, 900000.00
+    UNION ALL SELECT 7, 9, 5500000.00, 2400000.00, 1100000.00
+    UNION ALL SELECT 8, 10, 3200000.00, 2000000.00, 900000.00
+    UNION ALL SELECT 9, 11, 3000000.00, 1800000.00, 800000.00
+    UNION ALL SELECT 10, 12, 4000000.00, 2200000.00, 1000000.00
+)
+SELECT
+    p.UserID,
+    p.AccountID,
+    8,
+    p.RentAmt,
+    TIMESTAMP(DATE_ADD(m.MonthStart, INTERVAL 2 DAY), '09:00:00'),
+    CONCAT('Monthly rent - ', DATE_FORMAT(m.MonthStart, '%Y-%m'))
+FROM months m
+JOIN expense_profiles p ON 1 = 1;
 
--- 6. SYNC ACCOUNT BALANCES FROM TRANSACTIONS
+INSERT INTO Expenses (UserID, AccountID, CategoryID, Amount, ExpenseDate, Description)
+WITH RECURSIVE months AS (
+    SELECT DATE('2025-01-01') AS MonthStart
+    UNION ALL
+    SELECT DATE_ADD(MonthStart, INTERVAL 1 MONTH)
+    FROM months
+    WHERE MonthStart < DATE('2026-04-01')
+),
+expense_profiles AS (
+    SELECT 1 AS UserID, 1 AS AccountID, 2200000.00 AS FoodAmt
+    UNION ALL SELECT 2, 3, 2500000.00
+    UNION ALL SELECT 3, 4, 2000000.00
+    UNION ALL SELECT 4, 5, 2600000.00
+    UNION ALL SELECT 5, 6, 2300000.00
+    UNION ALL SELECT 6, 8, 1600000.00
+    UNION ALL SELECT 7, 9, 2400000.00
+    UNION ALL SELECT 8, 10, 2000000.00
+    UNION ALL SELECT 9, 11, 1800000.00
+    UNION ALL SELECT 10, 12, 2200000.00
+)
+SELECT
+    p.UserID,
+    p.AccountID,
+    1,
+    p.FoodAmt,
+    TIMESTAMP(DATE_ADD(m.MonthStart, INTERVAL 9 DAY), '19:00:00'),
+    CONCAT('Food and groceries - ', DATE_FORMAT(m.MonthStart, '%Y-%m'))
+FROM months m
+JOIN expense_profiles p ON 1 = 1;
+
+INSERT INTO Expenses (UserID, AccountID, CategoryID, Amount, ExpenseDate, Description)
+WITH RECURSIVE months AS (
+    SELECT DATE('2025-01-01') AS MonthStart
+    UNION ALL
+    SELECT DATE_ADD(MonthStart, INTERVAL 1 MONTH)
+    FROM months
+    WHERE MonthStart < DATE('2026-04-01')
+),
+expense_profiles AS (
+    SELECT 1 AS UserID, 1 AS AccountID, 1000000.00 AS TransportAmt
+    UNION ALL SELECT 2, 3, 1200000.00
+    UNION ALL SELECT 3, 4, 800000.00
+    UNION ALL SELECT 4, 5, 1100000.00
+    UNION ALL SELECT 5, 6, 1100000.00
+    UNION ALL SELECT 6, 8, 900000.00
+    UNION ALL SELECT 7, 9, 1100000.00
+    UNION ALL SELECT 8, 10, 900000.00
+    UNION ALL SELECT 9, 11, 800000.00
+    UNION ALL SELECT 10, 12, 1000000.00
+)
+SELECT
+    p.UserID,
+    p.AccountID,
+    2,
+    p.TransportAmt,
+    TIMESTAMP(DATE_ADD(m.MonthStart, INTERVAL 17 DAY), '08:30:00'),
+    CONCAT('Transportation cost - ', DATE_FORMAT(m.MonthStart, '%Y-%m'))
+FROM months m
+JOIN expense_profiles p ON 1 = 1;
+
+-- 5.2 User-specific spending behavior for profile diversity
+INSERT INTO Expenses (UserID, AccountID, CategoryID, Amount, ExpenseDate, Description)
+WITH RECURSIVE months AS (
+    SELECT DATE('2025-01-01') AS MonthStart, 1 AS MonthNo
+    UNION ALL
+    SELECT DATE_ADD(MonthStart, INTERVAL 1 MONTH), MonthNo + 1
+    FROM months
+    WHERE MonthStart < DATE('2026-04-01')
+)
+SELECT
+    1,
+    2,
+    4,
+    1000000.00,
+    TIMESTAMP(DATE_ADD(MonthStart, INTERVAL 21 DAY), '21:05:00'),
+    CONCAT('Entertainment spending - ', DATE_FORMAT(MonthStart, '%Y-%m'))
+FROM months
+WHERE MOD(MonthNo, 2) = 0;
+
+INSERT INTO Expenses (UserID, AccountID, CategoryID, Amount, ExpenseDate, Description)
+WITH RECURSIVE months AS (
+    SELECT DATE('2025-01-01') AS MonthStart
+    UNION ALL
+    SELECT DATE_ADD(MonthStart, INTERVAL 1 MONTH)
+    FROM months
+    WHERE MonthStart < DATE('2026-04-01')
+)
+SELECT
+    2,
+    3,
+    7,
+    1200000.00,
+    TIMESTAMP(DATE_ADD(MonthStart, INTERVAL 23 DAY), '20:00:00'),
+    CONCAT('Utilities bill - ', DATE_FORMAT(MonthStart, '%Y-%m'))
+FROM months;
+
+INSERT INTO Expenses (UserID, AccountID, CategoryID, Amount, ExpenseDate, Description)
+WITH RECURSIVE months AS (
+    SELECT DATE('2025-01-01') AS MonthStart, 1 AS MonthNo
+    UNION ALL
+    SELECT DATE_ADD(MonthStart, INTERVAL 1 MONTH), MonthNo + 1
+    FROM months
+    WHERE MonthStart < DATE('2026-04-01')
+)
+SELECT
+    3,
+    4,
+    6,
+    CASE WHEN MOD(MonthNo, 4) = 3 THEN 1800000.00 ELSE 600000.00 END,
+    TIMESTAMP(DATE_ADD(MonthStart, INTERVAL 13 DAY), '10:00:00'),
+    CONCAT('Healthcare spending - ', DATE_FORMAT(MonthStart, '%Y-%m'))
+FROM months;
+
+INSERT INTO Expenses (UserID, AccountID, CategoryID, Amount, ExpenseDate, Description)
+WITH RECURSIVE months AS (
+    SELECT DATE('2025-01-01') AS MonthStart
+    UNION ALL
+    SELECT DATE_ADD(MonthStart, INTERVAL 1 MONTH)
+    FROM months
+    WHERE MonthStart < DATE('2026-04-01')
+)
+SELECT
+    4,
+    5,
+    5,
+    1500000.00,
+    TIMESTAMP(DATE_ADD(MonthStart, INTERVAL 19 DAY), '21:10:00'),
+    CONCAT('Shopping spending - ', DATE_FORMAT(MonthStart, '%Y-%m'))
+FROM months;
+
+INSERT INTO Expenses (UserID, AccountID, CategoryID, Amount, ExpenseDate, Description)
+WITH RECURSIVE months AS (
+    SELECT DATE('2025-01-01') AS MonthStart
+    UNION ALL
+    SELECT DATE_ADD(MonthStart, INTERVAL 1 MONTH)
+    FROM months
+    WHERE MonthStart < DATE('2026-04-01')
+)
+SELECT
+    5,
+    7,
+    5,
+    1400000.00,
+    TIMESTAMP(DATE_ADD(MonthStart, INTERVAL 20 DAY), '20:30:00'),
+    CONCAT('Personal shopping - ', DATE_FORMAT(MonthStart, '%Y-%m'))
+FROM months;
+
+INSERT INTO Expenses (UserID, AccountID, CategoryID, Amount, ExpenseDate, Description)
+WITH RECURSIVE months AS (
+    SELECT DATE('2025-01-01') AS MonthStart, 1 AS MonthNo
+    UNION ALL
+    SELECT DATE_ADD(MonthStart, INTERVAL 1 MONTH), MonthNo + 1
+    FROM months
+    WHERE MonthStart < DATE('2026-04-01')
+)
+SELECT
+    6,
+    8,
+    6,
+    CASE WHEN MOD(MonthNo, 3) = 0 THEN 1700000.00 ELSE 500000.00 END,
+    TIMESTAMP(DATE_ADD(MonthStart, INTERVAL 24 DAY), '09:30:00'),
+    CONCAT('Healthcare cost (variable) - ', DATE_FORMAT(MonthStart, '%Y-%m'))
+FROM months;
+
+INSERT INTO Expenses (UserID, AccountID, CategoryID, Amount, ExpenseDate, Description)
+WITH RECURSIVE months AS (
+    SELECT DATE('2025-01-01') AS MonthStart
+    UNION ALL
+    SELECT DATE_ADD(MonthStart, INTERVAL 1 MONTH)
+    FROM months
+    WHERE MonthStart < DATE('2026-04-01')
+)
+SELECT
+    7,
+    9,
+    4,
+    900000.00,
+    TIMESTAMP(DATE_ADD(MonthStart, INTERVAL 22 DAY), '21:15:00'),
+    CONCAT('Entertainment spending - ', DATE_FORMAT(MonthStart, '%Y-%m'))
+FROM months;
+
+INSERT INTO Expenses (UserID, AccountID, CategoryID, Amount, ExpenseDate, Description)
+WITH RECURSIVE months AS (
+    SELECT DATE('2025-01-01') AS MonthStart
+    UNION ALL
+    SELECT DATE_ADD(MonthStart, INTERVAL 1 MONTH)
+    FROM months
+    WHERE MonthStart < DATE('2026-04-01')
+)
+SELECT
+    8,
+    10,
+    3,
+    2200000.00,
+    TIMESTAMP(DATE_ADD(MonthStart, INTERVAL 18 DAY), '18:45:00'),
+    CONCAT('Education spending - ', DATE_FORMAT(MonthStart, '%Y-%m'))
+FROM months;
+
+INSERT INTO Expenses (UserID, AccountID, CategoryID, Amount, ExpenseDate, Description)
+WITH RECURSIVE months AS (
+    SELECT DATE('2025-01-01') AS MonthStart, 1 AS MonthNo
+    UNION ALL
+    SELECT DATE_ADD(MonthStart, INTERVAL 1 MONTH), MonthNo + 1
+    FROM months
+    WHERE MonthStart < DATE('2026-04-01')
+)
+SELECT
+    9,
+    11,
+    6,
+    CASE WHEN MOD(MonthNo, 2) = 1 THEN 2500000.00 ELSE 900000.00 END,
+    TIMESTAMP(DATE_ADD(MonthStart, INTERVAL 13 DAY), '09:45:00'),
+    CONCAT('Healthcare spending - ', DATE_FORMAT(MonthStart, '%Y-%m'))
+FROM months;
+
+INSERT INTO Expenses (UserID, AccountID, CategoryID, Amount, ExpenseDate, Description)
+WITH RECURSIVE months AS (
+    SELECT DATE('2025-01-01') AS MonthStart
+    UNION ALL
+    SELECT DATE_ADD(MonthStart, INTERVAL 1 MONTH)
+    FROM months
+    WHERE MonthStart < DATE('2026-04-01')
+)
+SELECT
+    10,
+    12,
+    5,
+    2800000.00,
+    TIMESTAMP(DATE_ADD(MonthStart, INTERVAL 19 DAY), '20:45:00'),
+    CONCAT('Shopping spending - ', DATE_FORMAT(MonthStart, '%Y-%m'))
+FROM months;
+
+-- 6. BUDGET PLANS (March 2026 + April 2026)
+-- Includes NORMAL, WARNING, and EXCEEDED scenarios.
+INSERT INTO BudgetPlans (
+    UserID, CategoryID, BudgetYear, BudgetMonth, PlannedAmount, WarningPercent
+) VALUES
+-- March 2026
+(1, 8, 2026, 3, 3800000.00, 80.00),
+(1, 1, 2026, 3, 3000000.00, 80.00),
+(2, 8, 2026, 3, 5800000.00, 80.00),
+(2, 7, 2026, 3, 1600000.00, 80.00),
+(3, 6, 2026, 3, 1700000.00, 80.00),
+(3, 8, 2026, 3, 5000000.00, 80.00),
+(4, 5, 2026, 3, 1800000.00, 80.00),
+(4, 3, 2026, 3, 2500000.00, 80.00),
+(5, 5, 2026, 3, 1500000.00, 80.00),
+(5, 8, 2026, 3, 6000000.00, 80.00),
+(6, 6, 2026, 3, 1500000.00, 80.00),
+(6, 1, 2026, 3, 1900000.00, 80.00),
+(7, 4, 2026, 3, 1000000.00, 80.00),
+(7, 8, 2026, 3, 7000000.00, 80.00),
+(8, 3, 2026, 3, 2100000.00, 80.00),
+(8, 8, 2026, 3, 5000000.00, 80.00),
+(9, 6, 2026, 3, 2600000.00, 80.00),
+(9, 1, 2026, 3, 2500000.00, 80.00),
+(10, 5, 2026, 3, 2500000.00, 80.00),
+(10, 8, 2026, 3, 4500000.00, 80.00),
+-- April 2026
+(1, 4, 2026, 4, 1200000.00, 80.00),
+(2, 8, 2026, 4, 7000000.00, 80.00),
+(3, 6, 2026, 4, 900000.00, 80.00),
+(4, 5, 2026, 4, 1400000.00, 80.00),
+(5, 5, 2026, 4, 2000000.00, 80.00),
+(6, 6, 2026, 4, 600000.00, 80.00),
+(7, 4, 2026, 4, 1300000.00, 80.00),
+(8, 3, 2026, 4, 2300000.00, 80.00),
+(9, 6, 2026, 4, 1000000.00, 80.00),
+(10, 5, 2026, 4, 3200000.00, 80.00);
+
+-- 7. SYNC ACCOUNT BALANCES FROM TRANSACTIONS
 UPDATE BankAccounts ba
 LEFT JOIN (
     SELECT UserID, AccountID, SUM(Amount) AS TotalIncome

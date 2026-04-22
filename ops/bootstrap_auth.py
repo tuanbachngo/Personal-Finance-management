@@ -1,0 +1,119 @@
+"""
+Bootstrap local app credentials without hard-coded passwords in source code.
+
+Required bootstrap settings:
+- PF_ADMIN_EMAIL
+- PF_ADMIN_PASSWORD
+
+Optional:
+- PF_ADMIN_NAME
+- PF_ADMIN_PHONE
+- PF_ADMIN_RECOVERY_HINT
+- PF_ADMIN_RECOVERY_ANSWER
+- PF_SEED_SAMPLE_USER_PASSWORD
+- PF_FORCE_RESET_SAMPLE_PASSWORDS (true/false)
+"""
+
+from pathlib import Path
+import sys
+import os
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from python_app.db_connection import get_connection
+from python_app.services.finance_service import FinanceService
+
+
+def _read_streamlit_secret(name: str) -> str:
+    try:
+        import streamlit as st
+    except Exception:
+        return ""
+
+    try:
+        value = st.secrets.get(name)
+    except Exception:
+        return ""
+
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def _required_env(name: str) -> str:
+    value = os.getenv(name, "").strip()
+    if not value:
+        value = _read_streamlit_secret(name)
+    if not value:
+        raise ValueError(
+            f"Missing required environment variable {name}. "
+            "Please set it via environment variables or .streamlit/secrets.toml before running bootstrap."
+        )
+    return value
+
+
+def _optional_env(name: str, default: str = "") -> str:
+    env_value = os.getenv(name, "").strip()
+    if env_value:
+        return env_value
+
+    secret_value = _read_streamlit_secret(name)
+    if secret_value:
+        return secret_value
+
+    return default.strip()
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        raw = _read_streamlit_secret(name)
+    if not raw:
+        return default
+    normalized = raw.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
+def main() -> None:
+    admin_email = _required_env("PF_ADMIN_EMAIL")
+    admin_password = _required_env("PF_ADMIN_PASSWORD")
+    admin_name = _optional_env("PF_ADMIN_NAME", "System Admin")
+    admin_phone = _optional_env("PF_ADMIN_PHONE", "")
+    admin_recovery_hint = _optional_env("PF_ADMIN_RECOVERY_HINT", "")
+    admin_recovery_answer = _optional_env("PF_ADMIN_RECOVERY_ANSWER", "")
+    seed_sample_user_password = _optional_env("PF_SEED_SAMPLE_USER_PASSWORD", "")
+    force_reset = _env_bool("PF_FORCE_RESET_SAMPLE_PASSWORDS", False)
+
+    connection = get_connection()
+    service = FinanceService(connection)
+    try:
+        result = service.bootstrap_auth_credentials(
+            admin_email=admin_email,
+            admin_password=admin_password,
+            admin_name=admin_name,
+            admin_phone=(admin_phone or None),
+            admin_recovery_hint=(admin_recovery_hint if admin_recovery_hint != "" else None),
+            admin_recovery_answer=(
+                admin_recovery_answer if admin_recovery_answer != "" else None
+            ),
+            seed_sample_user_password=(seed_sample_user_password or None),
+            force_reset_sample_passwords=force_reset,
+        )
+        print("Auth bootstrap completed successfully.")
+        print(f"- Admin UserID: {result['admin_user_id']}")
+        print(f"- Admin user created: {result['created_admin_user']}")
+        print(f"- Sample user credentials seeded: {result['seeded_user_credentials']}")
+    finally:
+        service.clear_auth_context()
+        if connection is not None and connection.is_connected():
+            connection.close()
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,13 @@
+.git
+.gitignore
+.venv
+venv
+__pycache__
+*.py[cod]
+.streamlit/secrets.toml
+.env
+.env.local
+.env.docker
+backups
+13.pdf
+Aeonik Pro

@@ -5,6 +5,12 @@
 - Primary goal: build a personal finance management app with MySQL and Python
 - Main database name must always be: Personal_Finance
 
+## Project requirements reference
+- The detailed project requirements are documented in `docs/project13_requirements.md`.
+- Before implementing any major feature, report, or UI flow, read that file first.
+- Use it as the functional checklist for deciding what is still missing from the project.
+- Keep implementation aligned with the required deliverables, main functionalities, and database expectations from Project 13.
+
 ## Tech stack
 - Backend language: Python
 - Database: MySQL
