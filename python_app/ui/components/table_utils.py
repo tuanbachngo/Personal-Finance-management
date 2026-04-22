@@ -43,7 +43,7 @@ def show_data_table(
             {key: _normalize_value(key, value) for key, value in row.items()}
             for row in rows
         ]
-        st.dataframe(normalized_rows, use_container_width=True, hide_index=True)
+        st.dataframe(normalized_rows, width="stretch", hide_index=True)
 
     if use_card:
         with start_card(title=table_title):

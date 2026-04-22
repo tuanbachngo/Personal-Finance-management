@@ -180,7 +180,7 @@ def _render_login_view(service) -> None:
     st.markdown("<div style='margin-top: 0.35rem;'></div>", unsafe_allow_html=True)
     action_col_1, action_col_2 = st.columns(2)
     with action_col_1:
-        if st.button("Sign up", key="open_signup_btn", type="secondary", use_container_width=True):
+        if st.button("Sign up", key="open_signup_btn", type="secondary", width="stretch"):
             _clear_auth_notice()
             _set_auth_view(AUTH_VIEW_SIGNUP)
             _safe_rerun()
@@ -189,7 +189,7 @@ def _render_login_view(service) -> None:
             "Forgot password?",
             key="open_forgot_btn",
             type="secondary",
-            use_container_width=True,
+            width="stretch",
         ):
             _clear_auth_notice()
             _reset_forgot_password_state(prefill_email=email)
