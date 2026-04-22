@@ -4,7 +4,7 @@ from typing import Any, Dict
 
 import streamlit as st
 
-from ui.components.theme import render_page_header, start_card
+from ..components.theme import render_page_header, start_card
 
 
 def render(service, current_user: Dict[str, Any]) -> None:

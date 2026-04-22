@@ -4,8 +4,8 @@ from typing import Any, Dict, Optional
 
 import streamlit as st
 
-from ui.components.table_utils import show_data_table
-from ui.components.theme import render_page_header, start_card
+from ..components.table_utils import show_data_table
+from ..components.theme import render_page_header, start_card
 
 
 def render(service, current_user: Dict[str, Any]) -> None:

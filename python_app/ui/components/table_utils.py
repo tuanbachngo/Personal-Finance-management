@@ -6,7 +6,7 @@ from typing import Any, Dict, List
 
 import streamlit as st
 
-from ui.components.theme import start_card
+from .theme import start_card
 
 
 def _normalize_value(column_name: str, value: Any) -> Any:

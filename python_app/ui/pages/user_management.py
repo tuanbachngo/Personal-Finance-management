@@ -4,9 +4,9 @@ from typing import Any, Dict, List
 
 import streamlit as st
 
-from ui.components.table_utils import show_data_table
-from ui.components.theme import render_page_header, start_card
-from ui.helpers.session import (
+from ..components.table_utils import show_data_table
+from ..components.theme import render_page_header, start_card
+from ..helpers.session import (
     get_authenticated_user_id,
     get_authenticated_user_role,
 )

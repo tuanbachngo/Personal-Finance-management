@@ -5,9 +5,9 @@ from typing import Any, Dict, List
 import pandas as pd
 import streamlit as st
 
-from ui.components.chart_utils import render_multi_line_chart, render_single_bar_chart
-from ui.components.table_utils import show_data_table
-from ui.components.theme import render_page_header, render_stat_card, start_card
+from ..components.chart_utils import render_multi_line_chart, render_single_bar_chart
+from ..components.table_utils import show_data_table
+from ..components.theme import render_page_header, render_stat_card, start_card
 
 
 def _format_money(value: float) -> str:

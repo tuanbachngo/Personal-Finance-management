@@ -6,13 +6,13 @@ from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 import streamlit as st
 
-from ui.components.chart_utils import (
+from ..components.chart_utils import (
     render_grouped_bar_chart,
     render_multi_line_chart,
     render_pie_chart,
 )
-from ui.components.table_utils import show_data_table
-from ui.components.theme import render_page_header, start_card
+from ..components.table_utils import show_data_table
+from ..components.theme import render_page_header, start_card
 
 
 def _optional_budget_filters() -> Tuple[Optional[int], Optional[int]]:

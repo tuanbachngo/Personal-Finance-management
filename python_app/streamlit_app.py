@@ -5,11 +5,19 @@ This app uses a simple multipage structure with shared current-user session stat
 """
 
 from datetime import datetime, timedelta
+from pathlib import Path
+import sys
 from typing import Any, Callable, Dict
 
 import streamlit as st
 
-from ui.helpers.session import (
+_APP_DIR = Path(__file__).resolve().parent
+_REPO_ROOT = _APP_DIR.parent
+for _path in (str(_REPO_ROOT), str(_APP_DIR)):
+    if _path not in sys.path:
+        sys.path.insert(0, _path)
+
+from python_app.ui.helpers.session import (
     clear_auth_session,
     get_authenticated_user_email,
     get_authenticated_user_id,
@@ -27,8 +35,8 @@ from ui.helpers.session import (
     set_current_user,
     touch_auth_activity,
 )
-from ui.components.theme import apply_theme, render_page_header, start_card
-from ui.pages import (
+from python_app.ui.components.theme import apply_theme, render_page_header, start_card
+from python_app.ui.pages import (
     add_expense,
     add_income,
     alerts,

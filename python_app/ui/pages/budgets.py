@@ -6,9 +6,9 @@ from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 import streamlit as st
 
-from ui.components.chart_utils import render_grouped_bar_chart
-from ui.components.table_utils import show_data_table
-from ui.components.theme import render_page_header, render_status_badge, start_card
+from ..components.chart_utils import render_grouped_bar_chart
+from ..components.table_utils import show_data_table
+from ..components.theme import render_page_header, render_status_badge, start_card
 
 
 def _optional_period_filter(key_prefix: str) -> Tuple[Optional[int], Optional[int]]:
