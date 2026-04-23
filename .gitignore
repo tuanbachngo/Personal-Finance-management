@@ -14,3 +14,6 @@ venv/
 
 # Optional local backup artifacts
 backups/
+
+# Local raw font/source assets not used by the app runtime
+Aeonik Pro/
