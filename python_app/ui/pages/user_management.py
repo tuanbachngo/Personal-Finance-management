@@ -45,6 +45,13 @@ def _format_user_option(user_row: Dict[str, Any]) -> str:
     return f"{user_row['UserName']} ({user_row['Email']})"
 
 
+def _build_bank_option_labels(banks: List[Dict[str, Any]]) -> Dict[int, str]:
+    return {
+        int(bank["BankID"]): f"{bank.get('BankCode', '')} - {bank.get('BankName', '')}".strip(" -")
+        for bank in banks
+    }
+
+
 def render(service, current_user: Dict[str, Any]) -> None:
     """Render user profile management UI."""
     acting_user_id = get_authenticated_user_id()
@@ -96,10 +103,21 @@ def render(service, current_user: Dict[str, Any]) -> None:
 
     if acting_role == "ADMIN":
         with start_card("Add User"):
+            banks = service.list_banks()
+            if not banks:
+                st.error("No active banks are available. Please seed the Banks catalog first.")
+                return
+            bank_labels = _build_bank_option_labels(banks)
+
             with st.form("add_user_profile_form"):
                 add_name = st.text_input("User name")
                 add_email = st.text_input("Email")
                 add_phone = st.text_input("Phone number (optional)")
+                add_bank_id = st.selectbox(
+                    "Initial bank",
+                    options=list(bank_labels.keys()),
+                    format_func=lambda bank_id: bank_labels[int(bank_id)],
+                )
                 add_password = st.text_input("Initial password", type="password")
                 add_recovery_hint = st.text_input("Recovery hint (optional)")
                 add_recovery_answer = st.text_input(
@@ -118,6 +136,7 @@ def render(service, current_user: Dict[str, Any]) -> None:
                             email=add_email,
                             phone_number=add_phone,
                             password=add_password,
+                            bank_id=add_bank_id,
                             user_role=add_role,
                             recovery_hint=add_recovery_hint,
                             recovery_answer=add_recovery_answer,

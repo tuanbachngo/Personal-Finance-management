@@ -156,6 +156,7 @@ class UserRepository:
         is_active: int = 1,
         recovery_hint: Optional[str] = None,
         recovery_answer_hash: Optional[str] = None,
+        initial_bank_id: Optional[int] = None,
     ) -> int:
         user_query = """
             INSERT INTO Users (UserName, Email, PhoneNumber)
@@ -167,6 +168,10 @@ class UserRepository:
                 RecoveryHint, RecoveryAnswerHash
             )
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """
+        account_query = """
+            INSERT INTO BankAccounts (UserID, BankID, Balance)
+            VALUES (%s, %s, 0.00)
         """
         cursor = self.connection.cursor()
         try:
@@ -185,6 +190,8 @@ class UserRepository:
                     recovery_answer_hash,
                 ),
             )
+            if initial_bank_id is not None:
+                cursor.execute(account_query, (user_id, initial_bank_id))
             self.connection.commit()
             return user_id
         except Exception:
@@ -549,6 +556,108 @@ class UserRepository:
         finally:
             cursor.close()
 
+    def create_auth_session_token(
+        self,
+        user_id: int,
+        token_hash: str,
+        expires_at: Any,
+        last_seen_at: Any,
+        user_agent: Optional[str] = None,
+    ) -> int:
+        query = """
+            INSERT INTO AuthSessionTokens (
+                UserID, TokenHash, ExpiresAt, LastSeenAt, UserAgent
+            )
+            VALUES (%s, %s, %s, %s, %s)
+        """
+        cursor = self.connection.cursor()
+        try:
+            cursor.execute(
+                query,
+                (user_id, token_hash, expires_at, last_seen_at, user_agent),
+            )
+            self.connection.commit()
+            return cursor.lastrowid
+        finally:
+            cursor.close()
+
+    def get_active_auth_session_by_hash(
+        self,
+        token_hash: str,
+    ) -> Optional[Dict[str, Any]]:
+        query = """
+            SELECT
+                ast.SessionID,
+                ast.UserID,
+                ast.TokenHash,
+                ast.ExpiresAt,
+                ast.LastSeenAt,
+                ast.RevokedAt,
+                ast.UserAgent,
+                ast.CreatedAt AS SessionCreatedAt,
+                u.UserName,
+                u.Email,
+                u.PhoneNumber,
+                uc.UserRole,
+                uc.IsActive
+            FROM AuthSessionTokens ast
+            JOIN Users u ON u.UserID = ast.UserID
+            JOIN UserCredentials uc ON uc.UserID = ast.UserID
+            WHERE ast.TokenHash = %s
+              AND ast.RevokedAt IS NULL
+              AND ast.ExpiresAt > NOW()
+            ORDER BY ast.SessionID DESC
+            LIMIT 1
+        """
+        cursor = self.connection.cursor(dictionary=True)
+        try:
+            cursor.execute(query, (token_hash,))
+            return cursor.fetchone()
+        finally:
+            cursor.close()
+
+    def touch_auth_session_token(
+        self,
+        session_id: int,
+        last_seen_at: Any,
+        expires_at: Any,
+        user_agent: Optional[str] = None,
+    ) -> int:
+        query = """
+            UPDATE AuthSessionTokens
+            SET LastSeenAt = %s,
+                ExpiresAt = %s,
+                UserAgent = COALESCE(%s, UserAgent)
+            WHERE SessionID = %s
+              AND RevokedAt IS NULL
+        """
+        cursor = self.connection.cursor()
+        try:
+            cursor.execute(query, (last_seen_at, expires_at, user_agent, session_id))
+            self.connection.commit()
+            return cursor.rowcount
+        finally:
+            cursor.close()
+
+    def revoke_auth_session_by_hash(
+        self,
+        token_hash: str,
+        revoked_at: Any,
+    ) -> int:
+        query = """
+            UPDATE AuthSessionTokens
+            SET RevokedAt = %s
+            WHERE TokenHash = %s
+              AND RevokedAt IS NULL
+        """
+        cursor = self.connection.cursor()
+        try:
+            cursor.execute(query, (revoked_at, token_hash))
+            self.connection.commit()
+            return cursor.rowcount
+        finally:
+            cursor.close()
+
     def delete_user(self, user_id: int) -> int:
         query = """
             DELETE FROM Users
@@ -566,16 +675,23 @@ class UserRepository:
         query = """
             SELECT
                 (SELECT COUNT(*) FROM BankAccounts WHERE UserID = %s) AS AccountCount,
+                (
+                    SELECT COUNT(*)
+                    FROM BankAccounts
+                    WHERE UserID = %s
+                      AND Balance <> 0
+                ) AS NonZeroBalanceAccountCount,
                 (SELECT COUNT(*) FROM Income WHERE UserID = %s) AS IncomeCount,
                 (SELECT COUNT(*) FROM Expenses WHERE UserID = %s) AS ExpenseCount,
                 (SELECT COUNT(*) FROM BudgetPlans WHERE UserID = %s) AS BudgetCount
         """
         cursor = self.connection.cursor(dictionary=True)
         try:
-            cursor.execute(query, (user_id, user_id, user_id, user_id))
+            cursor.execute(query, (user_id, user_id, user_id, user_id, user_id))
             row = cursor.fetchone() or {}
             return {
                 "AccountCount": int(row.get("AccountCount", 0)),
+                "NonZeroBalanceAccountCount": int(row.get("NonZeroBalanceAccountCount", 0)),
                 "IncomeCount": int(row.get("IncomeCount", 0)),
                 "ExpenseCount": int(row.get("ExpenseCount", 0)),
                 "BudgetCount": int(row.get("BudgetCount", 0)),

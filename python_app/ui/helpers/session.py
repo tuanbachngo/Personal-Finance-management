@@ -20,6 +20,8 @@ except ImportError:
     )
     from python_app.services.finance_service import FinanceService
 
+_AUTH_SESSION_QUERY_PARAM = "pf_session"
+
 
 def _create_finance_service() -> FinanceService:
     """Open a fresh connection + service pair and store them in session state."""
@@ -60,6 +62,7 @@ def initialize_auth_state() -> None:
     st.session_state.setdefault("auth_user_role", None)
     st.session_state.setdefault("auth_user_name", None)
     st.session_state.setdefault("auth_user_email", None)
+    st.session_state.setdefault("auth_session_token", None)
     st.session_state.setdefault("auth_last_activity_at", None)
     st.session_state.setdefault("auth_view", "login")
     st.session_state.setdefault("auth_prefill_email", "")
@@ -92,6 +95,7 @@ def clear_auth_session() -> None:
     st.session_state["auth_user_role"] = None
     st.session_state["auth_user_name"] = None
     st.session_state["auth_user_email"] = None
+    st.session_state["auth_session_token"] = None
     st.session_state["current_user_id"] = None
     st.session_state["auth_last_activity_at"] = None
     st.session_state["auth_view"] = "login"
@@ -120,6 +124,59 @@ def get_authenticated_user_email() -> Optional[str]:
     return st.session_state.get("auth_user_email")
 
 
+def get_authenticated_session_token() -> Optional[str]:
+    raw = st.session_state.get("auth_session_token")
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    return text or None
+
+
+def _read_query_param_token() -> Optional[str]:
+    try:
+        value = st.query_params.get(_AUTH_SESSION_QUERY_PARAM)
+    except Exception:
+        return None
+
+    if isinstance(value, list):
+        value = value[0] if value else None
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def set_persistent_auth_session_token(token: str) -> None:
+    normalized = (token or "").strip()
+    if not normalized:
+        return
+    st.session_state["auth_session_token"] = normalized
+    try:
+        st.query_params[_AUTH_SESSION_QUERY_PARAM] = normalized
+    except Exception:
+        pass
+
+
+def clear_persistent_auth_session_token() -> None:
+    st.session_state["auth_session_token"] = None
+    try:
+        if _AUTH_SESSION_QUERY_PARAM in st.query_params:
+            del st.query_params[_AUTH_SESSION_QUERY_PARAM]
+    except Exception:
+        pass
+
+
+def get_persistent_auth_session_token() -> Optional[str]:
+    cached = get_authenticated_session_token()
+    if cached:
+        return cached
+
+    token = _read_query_param_token()
+    if token:
+        st.session_state["auth_session_token"] = token
+    return token
+
+
 def touch_auth_activity() -> None:
     st.session_state["auth_last_activity_at"] = datetime.now().isoformat()
 
@@ -137,6 +194,31 @@ def get_auth_last_activity() -> Optional[datetime]:
 def load_users(service: FinanceService) -> List[Dict[str, Any]]:
     """Load all users for sidebar selection."""
     return service.list_users()
+
+
+def restore_authenticated_user_from_persistent_session(
+    service: FinanceService,
+    user_agent: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Restore auth state from a persisted session token after browser reload."""
+    session_token = get_persistent_auth_session_token()
+    if not session_token:
+        return None
+
+    try:
+        auth_user = service.restore_auth_session(
+            session_token=session_token,
+            user_agent=user_agent,
+        )
+    except ValueError:
+        clear_persistent_auth_session_token()
+        clear_auth_session()
+        return None
+
+    set_authenticated_user(auth_user)
+    st.session_state["auth_session_token"] = session_token
+    touch_auth_activity()
+    return auth_user
 
 
 def initialize_current_user(users: List[Dict[str, Any]]) -> Optional[int]:

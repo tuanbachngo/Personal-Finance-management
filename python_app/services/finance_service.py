@@ -308,6 +308,18 @@ class FinanceService:
     def _otp_expiration_timestamp(cls, now: datetime) -> datetime:
         return now + timedelta(minutes=cls.OTP_EXPIRE_MINUTES)
 
+    @classmethod
+    def _session_expiration_timestamp(cls, now: datetime) -> datetime:
+        return now + timedelta(minutes=cls.SESSION_TIMEOUT_MINUTES)
+
+    @staticmethod
+    def _generate_session_token() -> str:
+        return secrets.token_urlsafe(32)
+
+    @staticmethod
+    def _hash_session_token(token: str) -> str:
+        return hashlib.sha256((token or "").encode("utf-8")).hexdigest()
+
     @staticmethod
     def _mask_email(email: str) -> str:
         if "@" not in email:
@@ -364,6 +376,17 @@ class FinanceService:
     @staticmethod
     def _is_inactive_account(row: Dict[str, Any]) -> bool:
         return int(row.get("IsActive", 0)) != 1
+
+    @staticmethod
+    def _build_auth_user_payload(row: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "UserID": row["UserID"],
+            "UserName": row["UserName"],
+            "Email": row["Email"],
+            "PhoneNumber": row.get("PhoneNumber"),
+            "UserRole": row.get("UserRole", "USER"),
+            "IsActive": int(row.get("IsActive", 1)),
+        }
 
     @classmethod
     def _build_locked_message(cls) -> str:
@@ -459,6 +482,17 @@ class FinanceService:
             raise ValueError(
                 f"AccountID {account_id} does not belong to UserID {user_id} or does not exist."
             )
+
+    def _validate_active_bank(self, bank_id: int) -> int:
+        try:
+            normalized_bank_id = int(bank_id)
+        except (TypeError, ValueError):
+            raise ValueError("Bank selection is required.") from None
+
+        bank = self.account_repo.get_bank(normalized_bank_id)
+        if not bank or int(bank.get("IsActive", 0)) != 1:
+            raise ValueError(f"BankID {normalized_bank_id} does not exist or is inactive.")
+        return normalized_bank_id
 
     def _validate_category(self, category_id: int) -> None:
         category_ids = {row["CategoryID"] for row in self.report_repo.get_all_categories()}
@@ -792,20 +826,127 @@ class FinanceService:
             email_attempted=normalized_email,
         )
 
-        return {
-            "UserID": row["UserID"],
-            "UserName": row["UserName"],
-            "Email": row["Email"],
-            "PhoneNumber": row["PhoneNumber"],
-            "UserRole": row.get("UserRole", "USER"),
-            "IsActive": int(row.get("IsActive", 1)),
-        }
+        return self._build_auth_user_payload(row)
+
+    def issue_auth_session_token(
+        self,
+        user_id: int,
+        email_attempted: Optional[str] = None,
+        user_agent: Optional[str] = None,
+    ) -> str:
+        credential = self.user_repo.get_user_credentials_by_user_id(user_id)
+        user = self.user_repo.get_user_by_id(user_id)
+        if not credential or not user:
+            raise ValueError("Cannot create auth session for an unknown account.")
+        if self._is_inactive_account(credential):
+            raise ValueError("This account is inactive. Please contact admin.")
+
+        now = self._now()
+        token = self._generate_session_token()
+        token_hash = self._hash_session_token(token)
+        expires_at = self._session_expiration_timestamp(now)
+        self.user_repo.create_auth_session_token(
+            user_id=user_id,
+            token_hash=token_hash,
+            expires_at=expires_at,
+            last_seen_at=now,
+            user_agent=user_agent,
+        )
+        self._write_auth_audit(
+            event_type="SESSION_ISSUED",
+            event_detail="Persistent auth session created.",
+            user_id=user_id,
+            email_attempted=email_attempted or user.get("Email"),
+        )
+        return token
+
+    def restore_auth_session(
+        self,
+        session_token: str,
+        user_agent: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        normalized_token = (session_token or "").strip()
+        if not normalized_token:
+            raise ValueError("Session token is required.")
+
+        token_hash = self._hash_session_token(normalized_token)
+        row = self.user_repo.get_active_auth_session_by_hash(token_hash)
+        if not row:
+            raise ValueError("Session token is invalid or expired.")
+        if self._is_inactive_account(row):
+            self.user_repo.revoke_auth_session_by_hash(token_hash, self._now())
+            raise ValueError("This account is inactive. Please contact admin.")
+
+        now = self._now()
+        expires_at = self._session_expiration_timestamp(now)
+        self.user_repo.touch_auth_session_token(
+            session_id=row["SessionID"],
+            last_seen_at=now,
+            expires_at=expires_at,
+            user_agent=user_agent,
+        )
+        self._write_auth_audit(
+            event_type="SESSION_RESTORED",
+            event_detail="Persistent auth session restored after reload.",
+            user_id=row["UserID"],
+            email_attempted=row.get("Email"),
+        )
+        return self._build_auth_user_payload(row)
+
+    def touch_auth_session(
+        self,
+        session_token: str,
+        user_agent: Optional[str] = None,
+    ) -> bool:
+        normalized_token = (session_token or "").strip()
+        if not normalized_token:
+            return False
+
+        token_hash = self._hash_session_token(normalized_token)
+        row = self.user_repo.get_active_auth_session_by_hash(token_hash)
+        if not row:
+            return False
+
+        now = self._now()
+        expires_at = self._session_expiration_timestamp(now)
+        self.user_repo.touch_auth_session_token(
+            session_id=row["SessionID"],
+            last_seen_at=now,
+            expires_at=expires_at,
+            user_agent=user_agent,
+        )
+        # MySQL may report rowcount=0 when the touch happens in the same second
+        # and DATETIME values are unchanged. The active row lookup above is the
+        # validity check; the UPDATE is only a best-effort session heartbeat.
+        return True
+
+    def revoke_auth_session(
+        self,
+        session_token: str,
+        email_attempted: Optional[str] = None,
+    ) -> int:
+        normalized_token = (session_token or "").strip()
+        if not normalized_token:
+            return 0
+
+        token_hash = self._hash_session_token(normalized_token)
+        row = self.user_repo.get_active_auth_session_by_hash(token_hash)
+        revoked = self.user_repo.revoke_auth_session_by_hash(token_hash, self._now())
+        if revoked and row:
+            self._write_auth_audit(
+                event_type="SESSION_REVOKED",
+                event_detail="Persistent auth session revoked.",
+                user_id=row["UserID"],
+                email_attempted=email_attempted or row.get("Email"),
+            )
+        return revoked
 
     def register_user(
         self,
         user_name: str,
         email: str,
         password: str,
+        bank_id: int,
         phone_number: Optional[str] = None,
         recovery_hint: Optional[str] = None,
         recovery_answer: Optional[str] = None,
@@ -815,6 +956,7 @@ class FinanceService:
         normalized_email = self._validate_email(email)
         normalized_phone = self._validate_phone_number(phone_number)
         normalized_password = self._validate_password(password)
+        normalized_bank_id = self._validate_active_bank(bank_id)
         normalized_recovery_hint = self._validate_recovery_hint(recovery_hint)
         normalized_recovery_answer = self._validate_recovery_answer(recovery_answer)
         self._validate_unique_email(normalized_email)
@@ -838,6 +980,7 @@ class FinanceService:
             is_active=1,
             recovery_hint=normalized_recovery_hint,
             recovery_answer_hash=recovery_answer_hash,
+            initial_bank_id=normalized_bank_id,
         )
         self._write_auth_audit(
             event_type="REGISTER_SUCCESS",
@@ -1141,6 +1284,7 @@ class FinanceService:
         email: str,
         phone_number: Optional[str],
         password: str,
+        bank_id: int,
         user_role: str = "USER",
         recovery_hint: Optional[str] = None,
         recovery_answer: Optional[str] = None,
@@ -1154,6 +1298,7 @@ class FinanceService:
         normalized_email = self._validate_email(email)
         normalized_phone = self._validate_phone_number(phone_number)
         normalized_password = self._validate_password(password)
+        normalized_bank_id = self._validate_active_bank(bank_id)
         normalized_role = self._validate_user_role(user_role)
         normalized_recovery_hint = self._validate_recovery_hint(recovery_hint)
         normalized_recovery_answer = self._validate_recovery_answer(recovery_answer)
@@ -1177,6 +1322,7 @@ class FinanceService:
             is_active=1,
             recovery_hint=normalized_recovery_hint,
             recovery_answer_hash=recovery_answer_hash,
+            initial_bank_id=normalized_bank_id,
         )
 
     def edit_user_profile(
@@ -1312,7 +1458,13 @@ class FinanceService:
             raise ValueError("Admin cannot delete the currently logged-in account.")
 
         dependencies = self.user_repo.get_user_dependency_counts(target_user_id)
-        if any(count > 0 for count in dependencies.values()):
+        has_financial_dependencies = (
+            dependencies.get("IncomeCount", 0) > 0
+            or dependencies.get("ExpenseCount", 0) > 0
+            or dependencies.get("BudgetCount", 0) > 0
+            or dependencies.get("NonZeroBalanceAccountCount", 0) > 0
+        )
+        if has_financial_dependencies:
             raise ValueError(
                 "Cannot delete this user because related financial records exist."
             )
@@ -1531,6 +1683,9 @@ class FinanceService:
     # ----------------------------
     # Listing
     # ----------------------------
+    def list_banks(self) -> List[Dict[str, Any]]:
+        return self.account_repo.get_active_banks()
+
     def list_users(self) -> List[Dict[str, Any]]:
         rows = self.user_repo.get_all_users()
         if self.auth_user_id is None or self.auth_user_role is None:

@@ -93,6 +93,10 @@ def run() -> None:
         _assert(len(users) > 0, "Users list should not be empty.")
         user_id = auth_user["UserID"]
 
+        banks = service.list_banks()
+        _assert(len(banks) > 0, "Banks list should not be empty.")
+        bank_id = banks[0]["BankID"]
+
         accounts = service.list_accounts(user_id=user_id)
         _assert(len(accounts) > 0, "Selected user should have at least one account.")
         account_id = accounts[0]["AccountID"]
@@ -204,6 +208,7 @@ def run() -> None:
             email=unique_email,
             phone_number="0912345678",
             password=smoke_initial_password,
+            bank_id=bank_id,
             user_role="USER",
         )
         print(f"User profile created with UserID={created_user_id}.")

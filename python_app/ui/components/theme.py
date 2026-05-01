@@ -76,6 +76,11 @@ def apply_theme() -> None:
         color: var(--pf-text);
     }}
 
+    .block-container {{
+        padding-top: 1.35rem;
+        padding-bottom: 2rem;
+    }}
+
     * {{
         font-family: Inter, system-ui, sans-serif;
     }}
@@ -111,7 +116,9 @@ def apply_theme() -> None:
         background: linear-gradient(180deg, #1b1f24 0%, #171a1f 100%);
         border: 1px solid var(--pf-border) !important;
         border-radius: var(--pf-radius-card);
-        padding: 0.55rem 0.65rem;
+        padding: 1rem 1.1rem;
+        margin-bottom: 0.9rem;
+        box-shadow: 0 18px 48px rgba(0, 0, 0, 0.18);
     }}
 
     .pf-card-title {{
@@ -132,7 +139,17 @@ def apply_theme() -> None:
         padding: 0.8rem 0.95rem;
         border: 1px solid var(--pf-border);
         background: #161a1f;
-        min-height: 88px;
+        height: 88px;
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+    }}
+
+    div[data-testid="stMarkdownContainer"]:has(.pf-stat-card),
+    div[data-testid="stElementContainer"]:has(.pf-stat-card) {{
+        height: 100%;
+        margin: 0;
     }}
 
     .pf-stat-card.brand {{ border-color: rgba(73, 79, 223, 0.65); }}
@@ -202,6 +219,13 @@ def apply_theme() -> None:
 
     .stButton > button:hover, .stFormSubmitButton > button:hover {{
         opacity: 0.9;
+    }}
+
+    div[data-testid="stForm"] {{
+        background: transparent !important;
+        border: 0 !important;
+        padding: 0 !important;
+        box-shadow: none !important;
     }}
 
     .stButton > button[kind="secondary"],

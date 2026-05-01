@@ -19,10 +19,12 @@ for _path in (str(_REPO_ROOT), str(_APP_DIR)):
 
 from python_app.ui.helpers.session import (
     clear_auth_session,
+    clear_persistent_auth_session_token,
     get_authenticated_user_email,
     get_authenticated_user_id,
     get_authenticated_user_name,
     get_authenticated_user_role,
+    get_authenticated_session_token,
     get_current_user,
     get_current_user_id,
     get_finance_service,
@@ -31,7 +33,9 @@ from python_app.ui.helpers.session import (
     is_authenticated,
     get_auth_last_activity,
     load_users,
+    restore_authenticated_user_from_persistent_session,
     set_authenticated_user,
+    set_persistent_auth_session_token,
     set_current_user,
     touch_auth_activity,
 )
@@ -86,16 +90,41 @@ def _safe_rerun() -> None:
         st.experimental_rerun()
 
 
+def _get_client_user_agent() -> str | None:
+    context = getattr(st, "context", None)
+    if context is None:
+        return None
+
+    headers = getattr(context, "headers", None)
+    if headers is None:
+        return None
+
+    try:
+        return headers.get("User-Agent") or headers.get("user-agent")
+    except Exception:
+        return None
+
+
 def _logout() -> None:
     service = st.session_state.get("finance_service")
+    session_token = get_authenticated_session_token()
     if service is not None:
         service.clear_auth_context()
+        if session_token:
+            try:
+                service.revoke_auth_session(
+                    session_token=session_token,
+                    email_attempted=get_authenticated_user_email(),
+                )
+            except Exception:
+                pass
 
     connection = st.session_state.get("db_connection")
     if connection is not None and connection.is_connected():
         connection.close()
     st.session_state.pop("finance_service", None)
     st.session_state.pop("db_connection", None)
+    clear_persistent_auth_session_token()
     clear_auth_session()
     _safe_rerun()
 
@@ -170,7 +199,13 @@ def _render_login_view(service) -> None:
             _clear_auth_notice()
             _set_auth_prefill_email("")
             _set_auth_view(AUTH_VIEW_LOGIN)
+            session_token = service.issue_auth_session_token(
+                user_id=auth_user["UserID"],
+                email_attempted=auth_user.get("Email"),
+                user_agent=_get_client_user_agent(),
+            )
             set_authenticated_user(auth_user)
+            set_persistent_auth_session_token(session_token)
             service.set_auth_context(auth_user["UserID"], auth_user["UserRole"])
             _safe_rerun()
         except ValueError as err:
@@ -210,12 +245,31 @@ def _render_login_view(service) -> None:
             _safe_rerun()
 
 
+def _build_bank_option_labels(banks: list[Dict[str, Any]]) -> Dict[int, str]:
+    return {
+        int(bank["BankID"]): f"{bank.get('BankCode', '')} - {bank.get('BankName', '')}".strip(" -")
+        for bank in banks
+    }
+
+
 def _render_signup_view(service) -> None:
     st.caption("Create a new USER account. You can sign in right after registration.")
+    banks = service.list_banks()
+    if not banks:
+        st.error("No active banks are available. Please seed the Banks catalog first.")
+        return
+    bank_labels = _build_bank_option_labels(banks)
+
     with st.form("signup_form"):
         user_name = st.text_input("User name", key="signup_user_name_input")
         email = st.text_input("Email", key="signup_email_input")
         phone_number = st.text_input("Phone number (optional)", key="signup_phone_number_input")
+        selected_bank_id = st.selectbox(
+            "Bank",
+            options=list(bank_labels.keys()),
+            format_func=lambda bank_id: bank_labels[int(bank_id)],
+            key="signup_bank_input",
+        )
         password = st.text_input("Password", type="password", key="signup_password_input")
         recovery_hint = st.text_input("Recovery hint (optional)", key="signup_recovery_hint_input")
         recovery_answer = st.text_input(
@@ -232,6 +286,7 @@ def _render_signup_view(service) -> None:
                 email=email,
                 phone_number=phone_number,
                 password=password,
+                bank_id=selected_bank_id,
                 recovery_hint=recovery_hint,
                 recovery_answer=recovery_answer,
             )
@@ -487,6 +542,13 @@ def main() -> None:
 
     service = get_finance_service()
     initialize_auth_state()
+    if not is_authenticated():
+        restored_user = restore_authenticated_user_from_persistent_session(
+            service,
+            user_agent=_get_client_user_agent(),
+        )
+        if restored_user is not None:
+            service.set_auth_context(restored_user["UserID"], restored_user["UserRole"])
     last_activity = get_auth_last_activity()
     if is_authenticated() and last_activity is not None:
         timeout = timedelta(minutes=service.SESSION_TIMEOUT_MINUTES)
@@ -497,11 +559,10 @@ def main() -> None:
 
     if not is_authenticated():
         _render_login(service)
-        with start_card():
-            st.info(
-                "Login credentials are configured locally via environment variables "
-                "and bootstrap script (no hard-coded demo password in source)."
-            )
+        st.info(
+            "Login credentials are configured locally via environment variables "
+            "and bootstrap script (no hard-coded demo password in source)."
+        )
         return
 
     auth_user_id = get_authenticated_user_id()
@@ -511,6 +572,17 @@ def main() -> None:
         return
     service.set_auth_context(auth_user_id, auth_role)
     touch_auth_activity()
+    session_token = get_authenticated_session_token()
+    if session_token:
+        try:
+            if not service.touch_auth_session(
+                session_token=session_token,
+                user_agent=_get_client_user_agent(),
+            ):
+                _logout()
+                return
+        except Exception:
+            pass
 
     users = load_users(service)
     if not users:
