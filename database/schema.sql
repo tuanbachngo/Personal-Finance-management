@@ -70,30 +70,61 @@ CREATE TABLE AuthAuditLogs (
         ON UPDATE CASCADE
 );
 
--- 5. EXPENSE CATEGORIES
+-- 5. AUTH SESSION TOKENS
+CREATE TABLE AuthSessionTokens (
+    SessionID BIGINT AUTO_INCREMENT PRIMARY KEY,
+    UserID INT NOT NULL,
+    TokenHash CHAR(64) NOT NULL UNIQUE,
+    ExpiresAt DATETIME NOT NULL,
+    LastSeenAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    RevokedAt DATETIME NULL,
+    UserAgent VARCHAR(255) NULL,
+    CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_authsession_user
+        FOREIGN KEY (UserID)
+        REFERENCES Users(UserID)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE
+);
+
+-- 6. EXPENSE CATEGORIES
 CREATE TABLE ExpenseCategories (
     CategoryID INT AUTO_INCREMENT PRIMARY KEY,
     CategoryName VARCHAR(100) NOT NULL UNIQUE
 );
 
--- 6. BANK ACCOUNTS
+-- 7. BANK CATALOG
+CREATE TABLE Banks (
+    BankID INT AUTO_INCREMENT PRIMARY KEY,
+    BankCode VARCHAR(30) NOT NULL UNIQUE,
+    BankName VARCHAR(100) NOT NULL UNIQUE,
+    IsActive TINYINT(1) NOT NULL DEFAULT 1
+);
+
+-- 8. BANK ACCOUNTS
 CREATE TABLE BankAccounts (
     AccountID INT AUTO_INCREMENT,
     UserID INT NOT NULL,
-    BankName VARCHAR(100) NOT NULL,
+    BankID INT NOT NULL,
     Balance DECIMAL(15,2) NOT NULL DEFAULT 0.00,
     PRIMARY KEY (AccountID),
     CONSTRAINT uq_bankaccounts_account_user UNIQUE (AccountID, UserID),
+    CONSTRAINT uq_bankaccounts_user_bank UNIQUE (UserID, BankID),
     CONSTRAINT fk_bankaccounts_user
         FOREIGN KEY (UserID)
         REFERENCES Users(UserID)
         ON DELETE CASCADE
         ON UPDATE CASCADE,
+    CONSTRAINT fk_bankaccounts_bank
+        FOREIGN KEY (BankID)
+        REFERENCES Banks(BankID)
+        ON DELETE RESTRICT
+        ON UPDATE CASCADE,
     CONSTRAINT chk_bankaccounts_balance
         CHECK (Balance >= 0)
 );
 
--- 7. INCOME
+-- 9. INCOME
 CREATE TABLE Income (
     IncomeID INT AUTO_INCREMENT PRIMARY KEY,
     UserID INT NOT NULL,
@@ -115,7 +146,7 @@ CREATE TABLE Income (
         ON UPDATE CASCADE
 );
 
--- 8. EXPENSES
+-- 10. EXPENSES
 CREATE TABLE Expenses (
     ExpenseID INT AUTO_INCREMENT PRIMARY KEY,
     UserID INT NOT NULL,
@@ -143,7 +174,7 @@ CREATE TABLE Expenses (
         ON UPDATE CASCADE
 );
 
--- 9. BUDGET PLANNING
+-- 11. BUDGET PLANNING
 -- One budget plan per user + category + month.
 CREATE TABLE BudgetPlans (
     BudgetID INT AUTO_INCREMENT PRIMARY KEY,
@@ -176,9 +207,11 @@ CREATE TABLE BudgetPlans (
         ON UPDATE CASCADE
 );
 
--- 10. PERFORMANCE INDEXES (REPORTING + COMMON FILTERS)
+-- 12. PERFORMANCE INDEXES (REPORTING + COMMON FILTERS)
 -- Keep these indexes additive only to preserve existing schema design.
 CREATE INDEX idx_bankaccounts_userid ON BankAccounts(UserID);
+CREATE INDEX idx_bankaccounts_bankid ON BankAccounts(BankID);
+CREATE INDEX idx_banks_active_name ON Banks(IsActive, BankName);
 CREATE INDEX idx_usercredentials_role_active ON UserCredentials(UserRole, IsActive);
 CREATE INDEX idx_usercredentials_lock_until ON UserCredentials(LockUntil);
 CREATE INDEX idx_usercredentials_last_login ON UserCredentials(LastLoginAt);
@@ -186,6 +219,8 @@ CREATE INDEX idx_usercredentials_last_login ON UserCredentials(LastLoginAt);
 CREATE INDEX idx_authotp_user_purpose_created ON AuthOtpCodes(UserID, OtpPurpose, CreatedAt);
 CREATE INDEX idx_authotp_expires_used ON AuthOtpCodes(ExpiresAt, IsUsed);
 CREATE INDEX idx_authaudit_user_created ON AuthAuditLogs(UserID, CreatedAt);
+CREATE INDEX idx_authsession_user_expires ON AuthSessionTokens(UserID, ExpiresAt);
+CREATE INDEX idx_authsession_expires_revoked ON AuthSessionTokens(ExpiresAt, RevokedAt);
 
 CREATE INDEX idx_income_user_date ON Income(UserID, IncomeDate);
 CREATE INDEX idx_income_date ON Income(IncomeDate);

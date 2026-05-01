@@ -32,24 +32,50 @@ INSERT INTO ExpenseCategories (CategoryID, CategoryName) VALUES
 (7, 'Utilities'),
 (8, 'Rent');
 
--- 3. BANK ACCOUNTS
--- Start with Balance = 0, then sync from Income and Expenses below.
-INSERT INTO BankAccounts (AccountID, UserID, BankName, Balance) VALUES
-(1, 1, 'Vietcombank', 0.00),
-(2, 1, 'Techcombank', 0.00),
-(3, 2, 'BIDV', 0.00),
-(4, 3, 'ACB', 0.00),
-(5, 4, 'MB Bank', 0.00),
-(6, 5, 'VietinBank', 0.00),
-(7, 5, 'TPBank', 0.00),
-(8, 6, 'Sacombank', 0.00),
-(9, 7, 'VPBank', 0.00),
-(10, 8, 'Agribank', 0.00),
-(11, 9, 'SHB', 0.00),
-(12, 10, 'HDBank', 0.00);
+-- 3. BANK CATALOG
+INSERT INTO Banks (BankID, BankCode, BankName, IsActive) VALUES
+(1, 'VCB', 'Vietcombank', 1),
+(2, 'TCB', 'Techcombank', 1),
+(3, 'BIDV', 'BIDV', 1),
+(4, 'ACB', 'ACB', 1),
+(5, 'MBB', 'MB Bank', 1),
+(6, 'CTG', 'VietinBank', 1),
+(7, 'TPB', 'TPBank', 1),
+(8, 'STB', 'Sacombank', 1),
+(9, 'VPB', 'VPBank', 1),
+(10, 'AGR', 'Agribank', 1),
+(11, 'SHB', 'SHB', 1),
+(12, 'HDB', 'HDBank', 1),
+(13, 'VIB', 'VIB', 1),
+(14, 'MSB', 'MSB', 1),
+(15, 'OCB', 'OCB', 1),
+(16, 'LPB', 'LPBank', 1),
+(17, 'EIB', 'Eximbank', 1),
+(18, 'NAB', 'Nam A Bank', 1),
+(19, 'BAB', 'Bac A Bank', 1),
+(20, 'ABB', 'ABBANK', 1),
+(21, 'SEAB', 'SeABank', 1),
+(22, 'PVCOM', 'PVcomBank', 1),
+(23, 'KLB', 'KienlongBank', 1);
 
--- 4. INCOME
--- 4.1 Primary monthly income by profile (all months from 2025-01 to 2026-04)
+-- 4. BANK ACCOUNTS
+-- Start with Balance = 0, then sync from Income and Expenses below.
+INSERT INTO BankAccounts (AccountID, UserID, BankID, Balance) VALUES
+(1, 1, 1, 0.00),
+(2, 1, 2, 0.00),
+(3, 2, 3, 0.00),
+(4, 3, 4, 0.00),
+(5, 4, 5, 0.00),
+(6, 5, 6, 0.00),
+(7, 5, 7, 0.00),
+(8, 6, 8, 0.00),
+(9, 7, 9, 0.00),
+(10, 8, 10, 0.00),
+(11, 9, 11, 0.00),
+(12, 10, 12, 0.00);
+
+-- 5. INCOME
+-- 5.1 Primary monthly income by profile (all months from 2025-01 to 2026-04)
 INSERT INTO Income (UserID, AccountID, Amount, IncomeDate, Description)
 WITH RECURSIVE months AS (
     SELECT DATE('2025-01-01') AS MonthStart, 1 AS MonthNo

@@ -161,7 +161,7 @@ SELECT
     t.UserID,
     u.UserName,
     t.AccountID,
-    ba.BankName,
+    b.BankName,
     t.TransactionDate,
     t.TransactionType,
     t.SortOrder,
@@ -196,4 +196,5 @@ FROM (
     FROM Expenses e
 ) t
 JOIN Users u ON t.UserID = u.UserID
-JOIN BankAccounts ba ON t.UserID = ba.UserID AND t.AccountID = ba.AccountID;
+JOIN BankAccounts ba ON t.UserID = ba.UserID AND t.AccountID = ba.AccountID
+JOIN Banks b ON b.BankID = ba.BankID;

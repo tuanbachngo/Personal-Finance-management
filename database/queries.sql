@@ -36,10 +36,11 @@ ORDER BY TotalSpent DESC;
 SELECT
     ba.AccountID,
     u.UserName,
-    ba.BankName,
+    b.BankName,
     ba.Balance
 FROM BankAccounts ba
 JOIN Users u ON ba.UserID = u.UserID
+JOIN Banks b ON b.BankID = ba.BankID
 ORDER BY u.UserID, ba.AccountID;
 
 -- 5. MONTHLY INCOME, EXPENSE, AND NET SAVING
@@ -128,7 +129,7 @@ FROM (
         u.UserID,
         u.UserName,
         ba.AccountID,
-        ba.BankName,
+        b.BankName,
         'INCOME' AS TransactionType,
         i.IncomeID AS TransactionID,
         i.IncomeDate AS TransactionDate,
@@ -137,6 +138,7 @@ FROM (
     FROM Income i
     JOIN Users u ON i.UserID = u.UserID
     JOIN BankAccounts ba ON i.AccountID = ba.AccountID AND i.UserID = ba.UserID
+    JOIN Banks b ON b.BankID = ba.BankID
 
     UNION ALL
 
@@ -144,7 +146,7 @@ FROM (
         u.UserID,
         u.UserName,
         ba.AccountID,
-        ba.BankName,
+        b.BankName,
         'EXPENSE' AS TransactionType,
         e.ExpenseID AS TransactionID,
         e.ExpenseDate AS TransactionDate,
@@ -153,6 +155,7 @@ FROM (
     FROM Expenses e
     JOIN Users u ON e.UserID = u.UserID
     JOIN BankAccounts ba ON e.AccountID = ba.AccountID AND e.UserID = ba.UserID
+    JOIN Banks b ON b.BankID = ba.BankID
 ) t
 ORDER BY
     t.UserID,
@@ -177,13 +180,14 @@ ORDER BY ExpenseDay;
 SELECT
     ba.AccountID,
     u.UserName,
-    ba.BankName,
+    b.BankName,
     COALESCE(i.TotalIncome, 0) AS TotalIncome,
     COALESCE(e.TotalExpense, 0) AS TotalExpense,
     COALESCE(i.TotalIncome, 0) - COALESCE(e.TotalExpense, 0) AS CalculatedBalance,
     ba.Balance AS StoredBalance
 FROM BankAccounts ba
 JOIN Users u ON ba.UserID = u.UserID
+JOIN Banks b ON b.BankID = ba.BankID
 LEFT JOIN (
     SELECT UserID, AccountID, SUM(Amount) AS TotalIncome
     FROM Income
@@ -199,7 +203,15 @@ ORDER BY ba.UserID, ba.AccountID;
 -- 11. QUICK DATA CHECKS
 SELECT * FROM Users;
 SELECT * FROM ExpenseCategories;
-SELECT * FROM BankAccounts;
+SELECT * FROM Banks;
+SELECT
+    ba.AccountID,
+    ba.UserID,
+    b.BankCode,
+    b.BankName,
+    ba.Balance
+FROM BankAccounts ba
+JOIN Banks b ON b.BankID = ba.BankID;
 SELECT * FROM Income;
 SELECT * FROM Expenses;
 
@@ -208,12 +220,13 @@ SELECT
     i.UserID,
     u.UserName,
     i.AccountID,
-    ba.BankName,
+    b.BankName,
     i.Amount,
     i.IncomeDate
 FROM Income i
 JOIN Users u ON i.UserID = u.UserID
 JOIN BankAccounts ba ON i.AccountID = ba.AccountID AND i.UserID = ba.UserID
+JOIN Banks b ON b.BankID = ba.BankID
 ORDER BY i.IncomeID;
 
 SELECT
@@ -221,7 +234,7 @@ SELECT
     e.UserID,
     u.UserName,
     e.AccountID,
-    ba.BankName,
+    b.BankName,
     e.CategoryID,
     c.CategoryName,
     e.Amount,
@@ -229,6 +242,7 @@ SELECT
 FROM Expenses e
 JOIN Users u ON e.UserID = u.UserID
 JOIN BankAccounts ba ON e.AccountID = ba.AccountID AND e.UserID = ba.UserID
+JOIN Banks b ON b.BankID = ba.BankID
 JOIN ExpenseCategories c ON e.CategoryID = c.CategoryID
 ORDER BY e.ExpenseID;
 
