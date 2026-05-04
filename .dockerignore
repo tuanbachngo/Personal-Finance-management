@@ -11,3 +11,5 @@ __pycache__
 backups
 13.pdf
 Aeonik Pro
+frontend/node_modules
+frontend/.next
