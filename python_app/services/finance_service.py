@@ -26,12 +26,14 @@ except Exception:  # pragma: no cover - dependency may be unavailable in some en
 try:
     from repositories.account_repository import AccountRepository
     from repositories.expense_repository import ExpenseRepository
+    from repositories.goal_repository import GoalRepository
     from repositories.income_repository import IncomeRepository
     from repositories.report_repository import ReportRepository
     from repositories.user_repository import UserRepository
 except ImportError:
     from python_app.repositories.account_repository import AccountRepository
     from python_app.repositories.expense_repository import ExpenseRepository
+    from python_app.repositories.goal_repository import GoalRepository
     from python_app.repositories.income_repository import IncomeRepository
     from python_app.repositories.report_repository import ReportRepository
     from python_app.repositories.user_repository import UserRepository
@@ -47,6 +49,9 @@ class FinanceService:
     EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
     PHONE_PATTERN = re.compile(r"^[0-9+\-\s]{7,20}$")
     USER_ROLE_VALUES = {"ADMIN", "USER"}
+    GOAL_TYPE_VALUES = {"SAVE_UP", "PAY_DOWN"}
+    GOAL_STATUS_VALUES = {"ACTIVE", "COMPLETED", "CANCELLED"}
+    GOAL_CONTRIBUTION_TYPE_VALUES = {"DEPOSIT", "WITHDRAW"}
     MIN_WARNING_PERCENT = Decimal("0")
     MAX_WARNING_PERCENT = Decimal("100")
     HASH_ALGO_SHA256 = "SHA256"
@@ -73,6 +78,7 @@ class FinanceService:
         self.income_repo = IncomeRepository(connection)
         self.expense_repo = ExpenseRepository(connection)
         self.report_repo = ReportRepository(connection)
+        self.goal_repo = GoalRepository(connection)
         self.auth_user_id: Optional[int] = None
         self.auth_user_role: Optional[str] = None
         self.auth_dev_mode = self._read_bool_runtime_config("AUTH_DEV_MODE", False)
@@ -1474,6 +1480,237 @@ class FinanceService:
             raise ValueError(f"UserID {target_user_id} could not be deleted.")
 
     # ----------------------------
+    # Goals
+    # ----------------------------
+    @classmethod
+    def _validate_goal_type(cls, goal_type: str) -> str:
+        normalized = (goal_type or "SAVE_UP").strip().upper()
+        if normalized not in cls.GOAL_TYPE_VALUES:
+            raise ValueError("Goal type must be SAVE_UP or PAY_DOWN.")
+        return normalized
+
+    @classmethod
+    def _validate_goal_status(cls, status: str) -> str:
+        normalized = (status or "ACTIVE").strip().upper()
+        if normalized not in cls.GOAL_STATUS_VALUES:
+            raise ValueError("Goal status must be ACTIVE, COMPLETED, or CANCELLED.")
+        return normalized
+
+    @classmethod
+    def _validate_goal_contribution_type(cls, contribution_type: str) -> str:
+        normalized = (contribution_type or "DEPOSIT").strip().upper()
+        if normalized not in cls.GOAL_CONTRIBUTION_TYPE_VALUES:
+            raise ValueError("Contribution type must be DEPOSIT or WITHDRAW.")
+        return normalized
+
+    @staticmethod
+    def _validate_goal_name(goal_name: str) -> str:
+        normalized = (goal_name or "").strip()
+        if not normalized:
+            raise ValueError("Goal name cannot be empty.")
+        if len(normalized) > 100:
+            raise ValueError("Goal name must not exceed 100 characters.")
+        return normalized
+
+    def _validate_goal_amounts(self, target_amount: float, current_amount: float) -> None:
+        self._validate_positive_amount(target_amount)
+        if current_amount is None:
+            raise ValueError("Current amount cannot be empty.")
+        try:
+            current_decimal = Decimal(str(current_amount))
+        except (InvalidOperation, ValueError, TypeError):
+            raise ValueError("Current amount must be a valid number.") from None
+        if current_decimal < 0:
+            raise ValueError("Current amount cannot be negative.")
+        if current_decimal > Decimal(str(target_amount)):
+            # This is allowed in real apps, but for this student project it keeps UI/report clean.
+            raise ValueError("Current amount cannot be greater than target amount.")
+
+    def _validate_growth_rate(self, annual_growth_rate: float) -> None:
+        try:
+            rate_decimal = Decimal(str(annual_growth_rate or 0))
+        except (InvalidOperation, ValueError, TypeError):
+            raise ValueError("Annual growth rate must be a valid number.") from None
+        if rate_decimal < 0:
+            raise ValueError("Annual growth rate cannot be negative.")
+
+    def _validate_goal_belongs_to_user(self, goal_id: int, user_id: int) -> Dict[str, Any]:
+        row = self.goal_repo.get_goal_by_id(goal_id)
+        if not row:
+            raise ValueError(f"GoalID {goal_id} does not exist.")
+        if int(row["UserID"]) != int(user_id):
+            raise ValueError(f"GoalID {goal_id} does not belong to UserID {user_id}.")
+        return row
+
+    def list_goals(self, user_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        scope_user_id = self._resolve_user_scope(user_id)
+        if scope_user_id is not None:
+            self._validate_user(scope_user_id)
+        return self.goal_repo.get_goals(scope_user_id)
+
+    def list_goal_progress(self, user_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        scope_user_id = self._resolve_user_scope(user_id)
+        if scope_user_id is not None:
+            self._validate_user(scope_user_id)
+        return self.goal_repo.get_goal_progress(scope_user_id)
+
+    def create_saving_goal(
+        self,
+        user_id: int,
+        linked_account_id: Optional[int],
+        goal_name: str,
+        goal_type: str,
+        target_amount: float,
+        current_amount: float = 0,
+        start_date: Optional[Any] = None,
+        target_date: Optional[Any] = None,
+        annual_growth_rate: float = 0,
+        status: str = "ACTIVE",
+        notes: Optional[str] = None,
+    ) -> int:
+        scope_user_id = self._resolve_user_scope(user_id)
+        if scope_user_id is None:
+            raise ValueError("UserID is required for creating a goal.")
+
+        self._validate_user(scope_user_id)
+
+        if linked_account_id is not None:
+            self._validate_account(scope_user_id, linked_account_id)
+
+        normalized_goal_name = self._validate_goal_name(goal_name)
+        normalized_goal_type = self._validate_goal_type(goal_type)
+        normalized_status = self._validate_goal_status(status)
+        self._validate_goal_amounts(target_amount, current_amount)
+        self._validate_growth_rate(annual_growth_rate)
+
+        normalized_start_date = self._normalize_date_input(start_date, "Start date") or date.today()
+        normalized_target_date = self._normalize_date_input(target_date, "Target date")
+
+        if normalized_target_date is not None and normalized_target_date < normalized_start_date:
+            raise ValueError("Target date cannot be earlier than start date.")
+
+        return self.goal_repo.create_goal(
+            user_id=scope_user_id,
+            linked_account_id=linked_account_id,
+            goal_name=normalized_goal_name,
+            goal_type=normalized_goal_type,
+            target_amount=target_amount,
+            current_amount=current_amount,
+            start_date=normalized_start_date,
+            target_date=normalized_target_date,
+            annual_growth_rate=annual_growth_rate or 0,
+            status=normalized_status,
+            notes=(notes or "").strip() or None,
+        )
+
+    def edit_saving_goal(
+        self,
+        goal_id: int,
+        user_id: int,
+        linked_account_id: Optional[int],
+        goal_name: str,
+        goal_type: str,
+        target_amount: float,
+        current_amount: float,
+        start_date: Optional[Any],
+        target_date: Optional[Any],
+        annual_growth_rate: float,
+        status: str,
+        notes: Optional[str],
+    ) -> None:
+        scope_user_id = self._resolve_user_scope(user_id)
+        if scope_user_id is None:
+            raise ValueError("UserID is required for updating a goal.")
+
+        self._validate_goal_belongs_to_user(goal_id, scope_user_id)
+
+        if linked_account_id is not None:
+            self._validate_account(scope_user_id, linked_account_id)
+
+        normalized_goal_name = self._validate_goal_name(goal_name)
+        normalized_goal_type = self._validate_goal_type(goal_type)
+        normalized_status = self._validate_goal_status(status)
+        self._validate_goal_amounts(target_amount, current_amount)
+        self._validate_growth_rate(annual_growth_rate)
+
+        normalized_start_date = self._normalize_date_input(start_date, "Start date") or date.today()
+        normalized_target_date = self._normalize_date_input(target_date, "Target date")
+
+        if normalized_target_date is not None and normalized_target_date < normalized_start_date:
+            raise ValueError("Target date cannot be earlier than start date.")
+
+        self.goal_repo.update_goal(
+            goal_id=goal_id,
+            user_id=scope_user_id,
+            linked_account_id=linked_account_id,
+            goal_name=normalized_goal_name,
+            goal_type=normalized_goal_type,
+            target_amount=target_amount,
+            current_amount=current_amount,
+            start_date=normalized_start_date,
+            target_date=normalized_target_date,
+            annual_growth_rate=annual_growth_rate or 0,
+            status=normalized_status,
+            notes=(notes or "").strip() or None,
+        )
+
+    def remove_saving_goal(self, goal_id: int, user_id: int) -> None:
+        scope_user_id = self._resolve_user_scope(user_id)
+        if scope_user_id is None:
+            raise ValueError("UserID is required for deleting a goal.")
+
+        self._validate_goal_belongs_to_user(goal_id, scope_user_id)
+        self.goal_repo.delete_goal(goal_id, scope_user_id)
+
+    def list_goal_contributions(
+        self,
+        goal_id: int,
+        user_id: int,
+    ) -> List[Dict[str, Any]]:
+        scope_user_id = self._resolve_user_scope(user_id)
+        if scope_user_id is None:
+            raise ValueError("UserID is required for goal contributions.")
+
+        self._validate_goal_belongs_to_user(goal_id, scope_user_id)
+        return self.goal_repo.get_goal_contributions(goal_id, scope_user_id)
+
+    def add_goal_contribution(
+        self,
+        goal_id: int,
+        user_id: int,
+        account_id: Optional[int],
+        amount: float,
+        contribution_type: str,
+        contribution_date: Optional[Any] = None,
+        description: Optional[str] = None,
+    ) -> int:
+        scope_user_id = self._resolve_user_scope(user_id)
+        if scope_user_id is None:
+            raise ValueError("UserID is required for adding a contribution.")
+
+        self._validate_goal_belongs_to_user(goal_id, scope_user_id)
+
+        if account_id is not None:
+            self._validate_account(scope_user_id, account_id)
+
+        self._validate_positive_amount(amount)
+        normalized_type = self._validate_goal_contribution_type(contribution_type)
+        normalized_date = (
+            self._normalize_date_input(contribution_date, "Contribution date")
+            or date.today()
+        )
+
+        return self.goal_repo.add_goal_contribution(
+            goal_id=goal_id,
+            user_id=scope_user_id,
+            account_id=account_id,
+            amount=amount,
+            contribution_type=normalized_type,
+            contribution_date=normalized_date,
+            description=(description or "").strip() or None,
+        )  
+
+    # ----------------------------
     # Create / Edit / Remove
     # ----------------------------
     def create_income(
@@ -1783,6 +2020,17 @@ class FinanceService:
             income_rows = [row for row in income_rows if row["AccountID"] == account_id]
             expense_rows = [row for row in expense_rows if row["AccountID"] == account_id]
 
+        category_name_map = {
+            row["CategoryID"]: row["CategoryName"]
+            for row in self.report_repo.get_all_categories()
+        }
+        account_rows = (
+            self.account_repo.get_all_accounts()
+            if user_id is None
+            else self.account_repo.get_accounts_by_user(user_id)
+        )
+        bank_name_map = {row["AccountID"]: row.get("BankName") for row in account_rows}
+
         unified = []
         for row in income_rows:
             unified.append(
@@ -1792,6 +2040,8 @@ class FinanceService:
                     "UserID": row["UserID"],
                     "AccountID": row["AccountID"],
                     "CategoryID": None,
+                    "CategoryName": None,
+                    "BankName": bank_name_map.get(row["AccountID"]),
                     "Amount": row["Amount"],
                     "TransactionDate": row["IncomeDate"],
                     "Description": row["Description"],
@@ -1805,6 +2055,8 @@ class FinanceService:
                     "UserID": row["UserID"],
                     "AccountID": row["AccountID"],
                     "CategoryID": row["CategoryID"],
+                    "CategoryName": category_name_map.get(row["CategoryID"], "Uncategorized"),
+                    "BankName": bank_name_map.get(row["AccountID"]),
                     "Amount": row["Amount"],
                     "TransactionDate": row["ExpenseDate"],
                     "Description": row["Description"],

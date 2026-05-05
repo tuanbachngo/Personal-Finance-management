@@ -11,7 +11,9 @@ from ..schemas import (
     LoginResponse,
     OtpRequest,
     OtpVerifyRequest,
+    PasswordChangeRequest,
     PasswordResetConfirmRequest,
+    ProfileUpdateRequest,
     RecoveryHintResponse,
     SignupRequest,
 )
@@ -139,3 +141,73 @@ def confirm_password_reset(
         raise map_value_error_to_http(err, default_status=400) from err
     return ApiMessageResponse(message="Password has been reset successfully. Please sign in.")
 
+
+@router.put("/profile", response_model=ApiMessageResponse)
+def update_own_profile(
+    payload: ProfileUpdateRequest,
+    ctx: AuthContext = Depends(get_authenticated_context),
+) -> ApiMessageResponse:
+    try:
+        ctx.service.edit_user_profile(
+            acting_user_id=int(ctx.user["UserID"]),
+            acting_role=str(ctx.user.get("UserRole", "USER")),
+            target_user_id=int(ctx.user["UserID"]),
+            user_name=payload.user_name,
+            email=payload.email,
+            phone_number=payload.phone_number,
+            new_password=None,
+            user_role=None,
+            is_active=None,
+            recovery_hint=None,
+            recovery_answer=None,
+        )
+    except ValueError as err:
+        raise map_value_error_to_http(err, default_status=400) from err
+    return ApiMessageResponse(message="Profile updated successfully.")
+
+
+@router.post("/password/change", response_model=ApiMessageResponse)
+def change_own_password(
+    payload: PasswordChangeRequest,
+    ctx: AuthContext = Depends(get_authenticated_context),
+) -> ApiMessageResponse:
+    if payload.current_password == payload.new_password:
+        raise map_value_error_to_http(
+            ValueError("New password must be different from current password."),
+            default_status=400,
+        )
+
+    try:
+        ctx.service.authenticate_user(
+            email=str(ctx.user["Email"]),
+            password=payload.current_password,
+        )
+
+        current_user = ctx.service.get_user_by_id(int(ctx.user["UserID"]))
+        if not current_user:
+            raise ValueError("Authenticated user does not exist.")
+
+        ctx.service.edit_user_profile(
+            acting_user_id=int(ctx.user["UserID"]),
+            acting_role=str(ctx.user.get("UserRole", "USER")),
+            target_user_id=int(ctx.user["UserID"]),
+            user_name=str(current_user["UserName"]),
+            email=str(current_user["Email"]),
+            phone_number=current_user.get("PhoneNumber"),
+            new_password=payload.new_password,
+            user_role=None,
+            is_active=None,
+            recovery_hint=None,
+            recovery_answer=None,
+        )
+        ctx.service.revoke_auth_session(
+            session_token=ctx.token,
+            email_attempted=str(ctx.user.get("Email", "")),
+        )
+    except ValueError as err:
+        default_status = 401 if "Invalid email or password" in str(err) else 400
+        raise map_value_error_to_http(err, default_status=default_status) from err
+
+    return ApiMessageResponse(
+        message="Password changed successfully. Please sign in again."
+    )

@@ -26,6 +26,8 @@ import type {
   OtpRequest,
   OtpVerifyRequest,
   PasswordResetConfirmRequest,
+  PasswordChangeRequest,
+  ProfileUpdateRequest,
   RecoveryHintResponse,
   SignupRequest,
   SpendingAlert,
@@ -34,7 +36,13 @@ import type {
   UserProfileCreateRequest,
   UserProfileRecord,
   UserProfileUpdateRequest,
-  YearlySummaryPoint
+  YearlySummaryPoint,
+  GoalContributionCreateRequest,
+  GoalContributionRecord,
+  GoalCreateRequest,
+  GoalProgressRecord,
+  GoalRecord,
+  GoalUpdateRequest,
 } from "@/types/api";
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL?.trim() || "http://localhost:8000/api/v1";
@@ -110,6 +118,20 @@ export async function confirmPasswordReset(
   payload: PasswordResetConfirmRequest
 ): Promise<ApiMessageResponse> {
   const response = await apiClient.post<ApiMessageResponse>("/auth/password/reset/confirm", payload);
+  return response.data;
+}
+
+export async function updateOwnProfile(
+  payload: ProfileUpdateRequest
+): Promise<ApiMessageResponse> {
+  const response = await apiClient.put<ApiMessageResponse>("/auth/profile", payload);
+  return response.data;
+}
+
+export async function changeOwnPassword(
+  payload: PasswordChangeRequest
+): Promise<ApiMessageResponse> {
+  const response = await apiClient.post<ApiMessageResponse>("/auth/password/change", payload);
   return response.data;
 }
 
@@ -320,5 +342,66 @@ export async function updateUserProfile(
 
 export async function deleteUserProfile(userId: number): Promise<ApiMessageResponse> {
   const response = await apiClient.delete<ApiMessageResponse>(`/users/profiles/${userId}`);
+  return response.data;
+}
+
+export async function getGoals(userId?: number): Promise<GoalRecord[]> {
+  const response = await apiClient.get<GoalRecord[]>("/goals", {
+    params: { user_id: userId }
+  });
+  return response.data;
+}
+
+export async function getGoalProgress(userId?: number): Promise<GoalProgressRecord[]> {
+  const response = await apiClient.get<GoalProgressRecord[]>("/goals/progress", {
+    params: { user_id: userId }
+  });
+  return response.data;
+}
+
+export async function createGoal(payload: GoalCreateRequest): Promise<CreateEntityResponse> {
+  const response = await apiClient.post<CreateEntityResponse>("/goals", payload);
+  return response.data;
+}
+
+export async function updateGoal(
+  goalId: number,
+  payload: GoalUpdateRequest
+): Promise<ApiMessageResponse> {
+  const response = await apiClient.put<ApiMessageResponse>(`/goals/${goalId}`, payload);
+  return response.data;
+}
+
+export async function deleteGoal(
+  goalId: number,
+  userId: number
+): Promise<ApiMessageResponse> {
+  const response = await apiClient.delete<ApiMessageResponse>(`/goals/${goalId}`, {
+    params: { user_id: userId }
+  });
+  return response.data;
+}
+
+export async function getGoalContributions(
+  goalId: number,
+  userId: number
+): Promise<GoalContributionRecord[]> {
+  const response = await apiClient.get<GoalContributionRecord[]>(
+    `/goals/${goalId}/contributions`,
+    {
+      params: { user_id: userId }
+    }
+  );
+  return response.data;
+}
+
+export async function createGoalContribution(
+  goalId: number,
+  payload: GoalContributionCreateRequest
+): Promise<CreateEntityResponse> {
+  const response = await apiClient.post<CreateEntityResponse>(
+    `/goals/${goalId}/contributions`,
+    payload
+  );
   return response.data;
 }

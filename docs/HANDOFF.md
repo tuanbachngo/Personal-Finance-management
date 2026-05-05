@@ -305,3 +305,116 @@ docker compose logs -f app
 - Verify the newly built Next.js frontend by running `docker compose up -d --build frontend` (if configured) or simply `npm run dev` in the `frontend` folder.
 - Consider adding pagination or infinite scroll to the Transactions table if data grows significantly.
 - Finalize the presentation deliverables for the project.
+
+## Update 2026-05-05 (Reports Cash Flow / Sankey)
+
+### What changed
+
+- Backend transaction payload now includes optional `CategoryName` and `BankName`:
+  - `backend/app/schemas.py` (`TransactionRecord`)
+  - `python_app/services/finance_service.py` (`list_transactions`)
+- Frontend transaction type updated to match:
+  - `frontend/src/types/api.ts` (`TransactionRecord`)
+- Sankey visibility rule relaxed to avoid false "Not enough data" states for real datasets with fewer categories:
+  - `frontend/src/components/finance/sankey-cash-flow.tsx`
+- Reports page improved for cash-flow reliability:
+  - Auto-initialize default date range from latest transaction date (instead of always "now - 30 days")
+  - Added explicit error state per active report tab
+  - Kept manual date change behavior intact
+  - File: `frontend/src/app/(app)/reports/page.tsx`
+
+### Commands run
+
+- `git status --short`
+- `npx.cmd tsc --noEmit` (frontend)
+
+### Current verification status
+
+- Change set applied successfully.
+- TypeScript check still fails due to an existing unrelated error:
+  - `src/app/(app)/budgets/page.tsx(216,68): Type '"normal"' is not assignable to KPI tone union`
+- Docker runtime verification was not completed in this session due to local Docker permission limitations in this environment.
+
+### Remaining risks / notes
+
+- Reports cash-flow depends on frontend consuming backend API from rebuilt backend container/image. Rebuild backend + frontend together before testing.
+- Existing unrelated frontend type issue in Budgets can still block full `next build`.
+
+## Update 2026-05-05 (Goals/Reports/Dashboard UI plan)
+
+### What changed
+
+- Reordered sidebar navigation:
+  - `Dashboard -> Transactions -> Budgets -> Goals -> Reports`
+  - File: `frontend/src/components/layout/sidebar.tsx`
+- Goals amount input now supports live comma formatting for integer typing:
+  - Add/Edit goal fields `Target amount`, `Current amount` changed to text + numeric input mode.
+  - Added sanitize/format/parse helpers and submit parsing.
+  - File: `frontend/src/app/(app)/goals/page.tsx`
+- Reports tabs parity update:
+  - `Spending`: added `Spending Transactions` table.
+  - `Income`: now uses donut + right-side legend/list + summary table (same pattern as Spending).
+  - Removed `Yearly Summary` section from Income tab.
+  - File: `frontend/src/app/(app)/reports/page.tsx`
+- Dashboard cash-flow enhancement:
+  - Added `Monthly/Yearly` toggle for cash flow chart.
+  - Added `Cash Flow Summary` table below chart for selected range.
+  - Yearly source uses `getYearlySummary`.
+  - File: `frontend/src/app/(app)/dashboard/page.tsx`
+- Login welcome-flow hardening:
+  - Avoided redirect race that could drop `?welcome=1` right after successful login.
+  - Successful login now uses `router.replace("/dashboard?welcome=1")` and bypasses fallback auto-redirect once.
+  - File: `frontend/src/app/(auth)/login/page.tsx`
+- Minor build-hygiene fix:
+  - `KpiCard` tone `"normal"` -> `"default"` in Budgets page to satisfy type union.
+  - File: `frontend/src/app/(app)/budgets/page.tsx`
+
+### Commands run
+
+- `git status --short`
+- `npx.cmd tsc --noEmit` (frontend) -> **pass**
+- `docker compose up -d --build frontend backend` -> **pass**
+- `docker compose ps` -> frontend/backend/db/app all running
+
+### Current verification status
+
+- Frontend TypeScript check passes.
+- Docker frontend/backend rebuild and startup succeeded.
+- No schema/database reset was performed in this update.
+
+## Update 2026-05-05 (Personal Info / Change Password in Next.js)
+
+### What changed
+
+- Added authenticated self-service API endpoints in auth router:
+  - `PUT /api/v1/auth/profile` to update own `user_name`, `email`, `phone_number`
+  - `POST /api/v1/auth/password/change` to change own password with `current_password` validation
+  - Files:
+    - `backend/app/routers/auth.py`
+    - `backend/app/schemas.py`
+- Extended frontend API/types:
+  - Added `ProfileUpdateRequest`, `PasswordChangeRequest`
+  - Added `updateOwnProfile()`, `changeOwnPassword()`
+  - Files:
+    - `frontend/src/types/api.ts`
+    - `frontend/src/lib/api-client.ts`
+- Added `/profile` page (authenticated):
+  - Tab `Personal Info` to save own profile fields
+  - Tab `Change Password` to update password and force re-login
+  - File:
+    - `frontend/src/app/(app)/profile/page.tsx`
+- Wired sidebar menu actions:
+  - `Personal Info` -> `/profile`
+  - `Change Password` -> `/profile?tab=password`
+  - File:
+    - `frontend/src/components/layout/sidebar.tsx`
+- Auth provider updated with `setAuthUser(...)` helper to refresh local user after profile update:
+  - File:
+    - `frontend/src/providers/auth-provider.tsx`
+
+### Commands run
+
+- `npx.cmd tsc --noEmit` (frontend) -> pass
+- `docker compose exec backend python -m py_compile backend/app/routers/auth.py backend/app/schemas.py` -> pass
+- `docker compose up -d --build backend frontend` -> pass
+- `docker compose ps` -> backend/frontend/db/app running

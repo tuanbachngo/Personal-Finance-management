@@ -207,8 +207,124 @@ CREATE TABLE BudgetPlans (
         ON UPDATE CASCADE
 );
 
--- 12. PERFORMANCE INDEXES (REPORTING + COMMON FILTERS)
--- Keep these indexes additive only to preserve existing schema design.
+-- 12. SAVING GOAL CATEGORIES
+CREATE TABLE SavingGoalCategories (
+    GoalCategoryID INT AUTO_INCREMENT PRIMARY KEY,
+    CategoryKey VARCHAR(50) NOT NULL UNIQUE,
+    CategoryName VARCHAR(100) NOT NULL,
+    IconEmoji VARCHAR(16) NOT NULL DEFAULT '💰',
+    Description VARCHAR(255) NULL,
+    IsCustomAllowed TINYINT(1) NOT NULL DEFAULT 0,
+    IsActive TINYINT(1) NOT NULL DEFAULT 1,
+    SortOrder INT NOT NULL DEFAULT 0,
+    CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 13. SAVING GOALS
+CREATE TABLE SavingGoals (
+    GoalID INT AUTO_INCREMENT PRIMARY KEY,
+    UserID INT NOT NULL,
+    LinkedAccountID INT NULL,
+
+    GoalName VARCHAR(100) NOT NULL,
+    GoalType ENUM('SAVE_UP', 'PAY_DOWN') NOT NULL DEFAULT 'SAVE_UP',
+    GoalCategoryID INT NULL,
+    CustomGoalCategoryName VARCHAR(100) NULL,
+
+    TargetAmount DECIMAL(15,2) NOT NULL,
+    CurrentAmount DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+
+    StartDate DATE NOT NULL DEFAULT (CURRENT_DATE),
+    TargetDate DATE NULL,
+
+    AnnualGrowthRate DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+
+    Status ENUM('ACTIVE', 'COMPLETED', 'CANCELLED') NOT NULL DEFAULT 'ACTIVE',
+    Notes VARCHAR(255) NULL,
+    CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_savinggoals_user
+        FOREIGN KEY (UserID)
+        REFERENCES Users(UserID)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+
+    CONSTRAINT fk_savinggoals_linked_account
+        FOREIGN KEY (LinkedAccountID)
+        REFERENCES BankAccounts(AccountID)
+        ON DELETE SET NULL
+        ON UPDATE CASCADE,
+
+    CONSTRAINT chk_savinggoals_target_amount
+        CHECK (TargetAmount > 0),
+
+    CONSTRAINT chk_savinggoals_current_amount
+        CHECK (CurrentAmount >= 0),
+
+    CONSTRAINT chk_savinggoals_growth_rate
+        CHECK (AnnualGrowthRate >= 0),
+
+    CONSTRAINT fk_savinggoals_category
+    FOREIGN KEY (GoalCategoryID)
+    REFERENCES SavingGoalCategories(GoalCategoryID)
+    ON DELETE SET NULL
+    ON UPDATE CASCADE
+);
+
+-- 14. GOAL CONTRIBUTIONS
+CREATE TABLE IF NOT EXISTS GoalContributions (
+    ContributionID INT AUTO_INCREMENT PRIMARY KEY,
+    GoalID INT NOT NULL,
+    UserID INT NOT NULL,
+    AccountID INT NULL,
+
+    Amount DECIMAL(15,2) NOT NULL,
+    ContributionType ENUM('DEPOSIT', 'WITHDRAW') NOT NULL DEFAULT 'DEPOSIT',
+    ContributionDate DATE NOT NULL DEFAULT (CURRENT_DATE),
+    Description VARCHAR(255) NULL,
+    CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_goalcontributions_goal
+        FOREIGN KEY (GoalID)
+        REFERENCES SavingGoals(GoalID)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+
+    CONSTRAINT fk_goalcontributions_user
+        FOREIGN KEY (UserID)
+        REFERENCES Users(UserID)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+
+    CONSTRAINT fk_goalcontributions_account
+        FOREIGN KEY (AccountID)
+        REFERENCES BankAccounts(AccountID)
+        ON DELETE SET NULL
+        ON UPDATE CASCADE,
+
+    CONSTRAINT chk_goalcontributions_amount
+        CHECK (Amount > 0)
+);
+
+-- 15. INDEXES 
+CREATE INDEX idx_savinggoals_user_status
+    ON SavingGoals(UserID, Status);
+
+CREATE INDEX idx_savinggoals_user_target_date
+    ON SavingGoals(UserID, TargetDate);
+
+CREATE INDEX idx_savinggoals_linked_account
+    ON SavingGoals(LinkedAccountID);
+
+CREATE INDEX idx_savinggoals_category
+    ON SavingGoals(GoalCategoryID);
+
+CREATE INDEX idx_goalcontributions_goal_date
+    ON GoalContributions(GoalID, ContributionDate);
+
+CREATE INDEX idx_goalcontributions_user_date
+    ON GoalContributions(UserID, ContributionDate);
+
 CREATE INDEX idx_bankaccounts_userid ON BankAccounts(UserID);
 CREATE INDEX idx_bankaccounts_bankid ON BankAccounts(BankID);
 CREATE INDEX idx_banks_active_name ON Banks(IsActive, BankName);

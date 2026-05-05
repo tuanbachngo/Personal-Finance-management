@@ -213,7 +213,7 @@ export default function BudgetsPage() {
 
         {/* KPI Cards */}
         <div className="grid gap-4 md:grid-cols-3 mb-6">
-          <KpiCard label="Total Budgeted" value={kpiStats.planned} tone="normal" />
+          <KpiCard label="Total Budgeted" value={kpiStats.planned} tone="default" />
           <KpiCard label="Total Spent" value={kpiStats.spent} tone="warning" />
           <KpiCard label="Remaining Budget" value={kpiStats.remaining} tone={kpiStats.remaining >= 0 ? "success" : "danger"} />
         </div>

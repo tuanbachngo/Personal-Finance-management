@@ -11,9 +11,11 @@ import {
 } from "recharts";
 
 import type { MonthlyTrendPoint } from "@/types/api";
+import type { ReactNode } from "react";
 
 type Props = {
   data: MonthlyTrendPoint[];
+  headerActions?: ReactNode;
 };
 
 function formatNumber(value: number): string {
@@ -22,10 +24,13 @@ function formatNumber(value: number): string {
   }).format(value);
 }
 
-export function CashFlowChart({ data }: Props) {
+export function CashFlowChart({ data, headerActions }: Props) {
   return (
     <div className="h-[400px] w-full rounded-xl border border-border bg-surface p-5 shadow-sm">
-      <h2 className="mb-6 text-lg font-semibold tracking-tight text-text">Cash Flow</h2>
+      <div className="mb-6 flex items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold tracking-tight text-text">Cash Flow</h2>
+        {headerActions ? <div className="flex items-center gap-2">{headerActions}</div> : null}
+      </div>
       <div className="h-[300px] w-full">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }} barGap={2} barSize={12}>

@@ -198,3 +198,58 @@ FROM (
 JOIN Users u ON t.UserID = u.UserID
 JOIN BankAccounts ba ON t.UserID = ba.UserID AND t.AccountID = ba.AccountID
 JOIN Banks b ON b.BankID = ba.BankID;
+
+-- View 8: saving goal progress
+-- Purpose: show goal progress, monthly required saving, and goal alert level.
+DROP VIEW IF EXISTS vw_saving_goal_progress;
+CREATE VIEW vw_saving_goal_progress AS
+SELECT
+    g.GoalID,
+    g.UserID,
+    u.UserName,
+    g.LinkedAccountID,
+    b.BankName,
+    g.GoalName,
+    g.GoalType,
+    g.TargetAmount,
+    g.CurrentAmount,
+    g.TargetAmount - g.CurrentAmount AS RemainingAmount,
+    ROUND((g.CurrentAmount / g.TargetAmount) * 100, 2) AS ProgressPercent,
+    g.StartDate,
+    g.TargetDate,
+    g.GoalCategoryID,
+    sgc.CategoryKey AS GoalCategoryKey,
+    sgc.CategoryName AS GoalCategoryName,
+    sgc.IconEmoji AS GoalIconEmoji,
+    sgc.IsCustomAllowed AS GoalCategoryIsCustomAllowed,
+    g.CustomGoalCategoryName,
+    CASE
+        WHEN g.TargetDate IS NULL THEN NULL
+        ELSE DATEDIFF(g.TargetDate, CURDATE())
+    END AS DaysRemaining,
+    CASE
+        WHEN g.TargetDate IS NULL THEN NULL
+        WHEN DATEDIFF(g.TargetDate, CURDATE()) <= 0 THEN g.TargetAmount - g.CurrentAmount
+        ELSE ROUND((g.TargetAmount - g.CurrentAmount) / GREATEST(TIMESTAMPDIFF(MONTH, CURDATE(), g.TargetDate), 1), 2)
+    END AS MonthlyRequired,
+    g.AnnualGrowthRate,
+    g.Status,
+    CASE
+        WHEN g.Status = 'CANCELLED' THEN _utf8mb4'CANCELLED' COLLATE utf8mb4_0900_ai_ci
+        WHEN g.CurrentAmount >= g.TargetAmount THEN _utf8mb4'COMPLETED' COLLATE utf8mb4_0900_ai_ci
+        WHEN g.TargetDate IS NOT NULL AND g.TargetDate < CURDATE() THEN _utf8mb4'OVERDUE' COLLATE utf8mb4_0900_ai_ci
+        WHEN g.TargetDate IS NOT NULL AND DATEDIFF(g.TargetDate, CURDATE()) <= 30 THEN _utf8mb4'DUE_SOON' COLLATE utf8mb4_0900_ai_ci
+        ELSE _utf8mb4'ON_TRACK' COLLATE utf8mb4_0900_ai_ci
+    END AS GoalAlertLevel,
+    g.Notes,
+    g.CreatedAt
+FROM SavingGoals g
+JOIN Users u
+    ON g.UserID = u.UserID
+LEFT JOIN SavingGoalCategories sgc
+    ON g.GoalCategoryID = sgc.GoalCategoryID
+LEFT JOIN BankAccounts ba
+    ON g.LinkedAccountID = ba.AccountID
+   AND g.UserID = ba.UserID
+LEFT JOIN Banks b
+    ON ba.BankID = b.BankID;

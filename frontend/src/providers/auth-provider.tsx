@@ -12,6 +12,7 @@ type AuthContextValue = {
   isAuthenticated: boolean;
   isAdmin: boolean;
   setSession: (loginResponse: LoginResponse) => void;
+  setAuthUser: (nextUser: AuthUser | null) => void;
   clearSession: (callApi?: boolean) => Promise<void>;
 };
 
@@ -52,6 +53,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(loginResponse.user);
   };
 
+  const setAuthUser = (nextUser: AuthUser | null) => {
+    if (nextUser) {
+      localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
+      localStorage.setItem("pf_user_name", nextUser.UserName);
+      localStorage.setItem("pf_user_email", nextUser.Email);
+    } else {
+      localStorage.removeItem(USER_KEY);
+      localStorage.removeItem("pf_user_name");
+      localStorage.removeItem("pf_user_email");
+    }
+    setUser(nextUser);
+  };
+
   const clearSession = async (callApi = true) => {
     if (callApi) {
       try {
@@ -77,6 +91,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isAuthenticated: Boolean(token && user),
       isAdmin: String(user?.UserRole || "USER").toUpperCase() === "ADMIN",
       setSession,
+      setAuthUser,
       clearSession
     }),
     [ready, token, user]

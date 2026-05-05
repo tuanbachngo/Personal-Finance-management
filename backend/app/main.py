@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
-from .routers import alerts, auth, budgets, dashboard, meta, reports, transactions, users
+from .routers import alerts, auth, budgets, dashboard, goals, meta, reports, transactions, users
 
 
 def create_app() -> FastAPI:
@@ -33,6 +33,7 @@ def create_app() -> FastAPI:
     app.include_router(reports.router, prefix=settings.api_prefix)
     app.include_router(budgets.router, prefix=settings.api_prefix)
     app.include_router(alerts.router, prefix=settings.api_prefix)
+    app.include_router(goals.router, prefix=settings.api_prefix)
     app.include_router(users.router, prefix=settings.api_prefix)
     return app
 

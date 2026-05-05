@@ -61,6 +61,17 @@ class PasswordResetConfirmRequest(BaseModel):
     new_password: str = Field(min_length=1, max_length=255)
 
 
+class ProfileUpdateRequest(BaseModel):
+    user_name: str = Field(min_length=1, max_length=100)
+    email: EmailStr
+    phone_number: str | None = Field(default=None, max_length=20)
+
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=255)
+    new_password: str = Field(min_length=1, max_length=255)
+
+
 class RecoveryHintResponse(BaseModel):
     recovery_hint: str | None = None
 
@@ -99,6 +110,8 @@ class TransactionRecord(BaseModel):
     UserID: int
     AccountID: int
     CategoryID: int | None = None
+    CategoryName: str | None = None
+    BankName: str | None = None
     Amount: float
     TransactionDate: datetime
     Description: str | None = None
@@ -297,3 +310,90 @@ class UserProfileUpdateRequest(BaseModel):
     is_active: int | None = None
     recovery_hint: str | None = None
     recovery_answer: str | None = None
+
+class GoalRecord(BaseModel):
+    GoalID: int
+    UserID: int
+    LinkedAccountID: int | None = None
+    GoalName: str
+    GoalType: str
+    TargetAmount: float
+    CurrentAmount: float
+    StartDate: date
+    TargetDate: date | None = None
+    AnnualGrowthRate: float
+    Status: str
+    Notes: str | None = None
+    CreatedAt: datetime | None = None
+
+
+class GoalProgressRecord(BaseModel):
+    GoalID: int
+    UserID: int
+    UserName: str
+    LinkedAccountID: int | None = None
+    BankName: str | None = None
+    GoalName: str
+    GoalType: str
+    TargetAmount: float
+    CurrentAmount: float
+    RemainingAmount: float
+    ProgressPercent: float
+    StartDate: date
+    TargetDate: date | None = None
+    DaysRemaining: int | None = None
+    MonthlyRequired: float | None = None
+    AnnualGrowthRate: float
+    Status: str
+    GoalAlertLevel: str
+    Notes: str | None = None
+    CreatedAt: datetime | None = None
+
+
+class GoalCreateRequest(BaseModel):
+    user_id: int
+    linked_account_id: int | None = None
+    goal_name: str = Field(min_length=1, max_length=100)
+    goal_type: str = "SAVE_UP"
+    target_amount: float = Field(gt=0)
+    current_amount: float = Field(default=0, ge=0)
+    start_date: date | None = None
+    target_date: date | None = None
+    annual_growth_rate: float = Field(default=0, ge=0)
+    status: str = "ACTIVE"
+    notes: str | None = Field(default=None, max_length=255)
+
+
+class GoalUpdateRequest(BaseModel):
+    user_id: int
+    linked_account_id: int | None = None
+    goal_name: str = Field(min_length=1, max_length=100)
+    goal_type: str = "SAVE_UP"
+    target_amount: float = Field(gt=0)
+    current_amount: float = Field(ge=0)
+    start_date: date | None = None
+    target_date: date | None = None
+    annual_growth_rate: float = Field(default=0, ge=0)
+    status: str = "ACTIVE"
+    notes: str | None = Field(default=None, max_length=255)
+
+
+class GoalContributionRecord(BaseModel):
+    ContributionID: int
+    GoalID: int
+    UserID: int
+    AccountID: int | None = None
+    Amount: float
+    ContributionType: str
+    ContributionDate: date
+    Description: str | None = None
+    CreatedAt: datetime | None = None
+
+
+class GoalContributionCreateRequest(BaseModel):
+    user_id: int
+    account_id: int | None = None
+    amount: float = Field(gt=0)
+    contribution_type: str = "DEPOSIT"
+    contribution_date: date | None = None
+    description: str | None = Field(default=None, max_length=255)

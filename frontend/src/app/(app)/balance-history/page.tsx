@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { AuthGuard } from "@/components/auth/auth-guard";
 import { DataTable } from "@/components/common/data-table";
@@ -11,10 +11,46 @@ import { formatCurrency, formatDateTime } from "@/lib/format";
 import { useAuth } from "@/providers/auth-provider";
 import { useUserScope } from "@/providers/user-scope-provider";
 
+function getDisplayName(user?: { UserName?: string | null; Email?: string | null } | null): string {
+  const name = user?.UserName?.trim();
+
+  if (name) {
+    return name;
+  }
+
+  const emailName = user?.Email?.split("@")[0]?.trim();
+
+  if (emailName) {
+    return emailName;
+  }
+
+  return "your account";
+}
+
+function friendlyTransactionType(type: string): string {
+  const normalized = type.toUpperCase();
+
+  if (normalized === "INCOME") {
+    return "Money in";
+  }
+
+  if (normalized === "EXPENSE") {
+    return "Money out";
+  }
+
+  return type;
+}
+
 export default function BalanceHistoryPage() {
   const { user, isAdmin } = useAuth();
-  const { selectedUserId } = useUserScope();
+  const { selectedUserId, users } = useUserScope();
+
   const userId = isAdmin ? selectedUserId ?? user?.UserID : user?.UserID;
+  const scopedUser =
+    isAdmin && userId
+      ? users.find((row) => row.UserID === userId)
+      : user;
+
   const [accountId, setAccountId] = useState<number | null>(null);
 
   const accountsQuery = useQuery({
@@ -29,20 +65,37 @@ export default function BalanceHistoryPage() {
     enabled: Boolean(userId)
   });
 
+  const tableRows = useMemo(() => {
+    return (historyQuery.data || []).map((row) => ({
+      Date: formatDateTime(row.TransactionDate),
+      Account: row.BankName,
+      Type: friendlyTransactionType(row.TransactionType),
+      Amount: formatCurrency(row.AmountSigned),
+      "Running balance": formatCurrency(row.RunningBalance)
+    }));
+  }, [historyQuery.data]);
+
   return (
     <AuthGuard>
-      <AppShell title="Balance History" subtitle={`Running balance timeline for UserID ${userId ?? "-"}`}>
-        <div className="rounded-lg border border-border bg-bg p-3">
-          <label className="mb-1 block text-sm text-muted">Filter by account</label>
+      <AppShell
+        title="Balance History"
+        subtitle={`Track how balances changed over time for ${getDisplayName(scopedUser)}`}
+      >
+        <div className="rounded-xl border border-border bg-surface p-5 shadow-sm">
+          <label className="mb-2 block text-sm font-semibold text-muted">
+            Filter by account
+          </label>
           <select
             value={accountId ?? ""}
-            onChange={(event) => setAccountId(event.target.value ? Number(event.target.value) : null)}
-            className="focus-ring w-full rounded-md border border-border bg-surface px-3 py-2 text-text"
+            onChange={(event) =>
+              setAccountId(event.target.value ? Number(event.target.value) : null)
+            }
+            className="focus-ring w-full rounded-xl border border-border bg-bg px-3 py-2 text-text"
           >
             <option value="">All accounts</option>
             {(accountsQuery.data || []).map((row) => (
               <option key={row.AccountID} value={row.AccountID}>
-                AccountID {row.AccountID} - {row.BankName}
+                {row.BankName}
               </option>
             ))}
           </select>
@@ -50,21 +103,12 @@ export default function BalanceHistoryPage() {
 
         <div className="mt-4">
           <DataTable
-            title="Balance History Timeline"
-            rows={(historyQuery.data || []).map((row) => ({
-              AccountID: row.AccountID,
-              BankName: row.BankName,
-              TransactionDate: formatDateTime(row.TransactionDate),
-              TransactionType: row.TransactionType,
-              ReferenceID: row.ReferenceID,
-              AmountSigned: formatCurrency(row.AmountSigned),
-              RunningBalance: formatCurrency(row.RunningBalance)
-            }))}
-            emptyMessage="No balance history found for this user."
+            title="Balance Timeline"
+            rows={tableRows}
+            emptyMessage="No balance history found."
           />
         </div>
       </AppShell>
     </AuthGuard>
   );
 }
-

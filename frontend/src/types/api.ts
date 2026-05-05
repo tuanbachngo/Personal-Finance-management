@@ -53,6 +53,17 @@ export type PasswordResetConfirmRequest = {
   new_password: string;
 };
 
+export type ProfileUpdateRequest = {
+  user_name: string;
+  email: string;
+  phone_number?: string | null;
+};
+
+export type PasswordChangeRequest = {
+  current_password: string;
+  new_password: string;
+};
+
 export type RecoveryHintResponse = {
   recovery_hint: string | null;
 };
@@ -91,6 +102,8 @@ export type TransactionRecord = {
   UserID: number;
   AccountID: number;
   CategoryID: number | null;
+  CategoryName?: string | null;
+  BankName?: string | null;
   Amount: number;
   TransactionDate: string;
   Description: string | null;
@@ -271,5 +284,93 @@ export type UserProfileUpdateRequest = {
   is_active?: number | null;
   recovery_hint?: string | null;
   recovery_answer?: string | null;
+};
+
+export type GoalRecord = {
+  GoalID: number;
+  UserID: number;
+  LinkedAccountID: number | null;
+  GoalName: string;
+  GoalType: string;
+  TargetAmount: number;
+  CurrentAmount: number;
+  StartDate: string;
+  TargetDate: string | null;
+  AnnualGrowthRate: number;
+  Status: string;
+  Notes: string | null;
+  CreatedAt: string | null;
+};
+
+export type GoalProgressRecord = {
+  GoalID: number;
+  UserID: number;
+  UserName: string;
+  LinkedAccountID: number | null;
+  BankName: string | null;
+  GoalName: string;
+  GoalType: string;
+  TargetAmount: number;
+  CurrentAmount: number;
+  RemainingAmount: number;
+  ProgressPercent: number;
+  StartDate: string;
+  TargetDate: string | null;
+  DaysRemaining: number | null;
+  MonthlyRequired: number | null;
+  AnnualGrowthRate: number;
+  Status: string;
+  GoalAlertLevel: string;
+  Notes: string | null;
+  CreatedAt: string | null;
+};
+
+export type GoalCreateRequest = {
+  user_id: number;
+  linked_account_id?: number | null;
+  goal_name: string;
+  goal_type: string;
+  target_amount: number;
+  current_amount?: number;
+  start_date?: string | null;
+  target_date?: string | null;
+  annual_growth_rate?: number;
+  status?: string;
+  notes?: string | null;
+};
+
+export type GoalUpdateRequest = {
+  user_id: number;
+  linked_account_id?: number | null;
+  goal_name: string;
+  goal_type: string;
+  target_amount: number;
+  current_amount: number;
+  start_date?: string | null;
+  target_date?: string | null;
+  annual_growth_rate?: number;
+  status: string;
+  notes?: string | null;
+};
+
+export type GoalContributionRecord = {
+  ContributionID: number;
+  GoalID: number;
+  UserID: number;
+  AccountID: number | null;
+  Amount: number;
+  ContributionType: string;
+  ContributionDate: string;
+  Description: string | null;
+  CreatedAt: string | null;
+};
+
+export type GoalContributionCreateRequest = {
+  user_id: number;
+  account_id?: number | null;
+  amount: number;
+  contribution_type: string;
+  contribution_date?: string | null;
+  description?: string | null;
 };
 

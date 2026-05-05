@@ -526,3 +526,150 @@ LEFT JOIN (
     ON ba.UserID = e.UserID AND ba.AccountID = e.AccountID
 SET ba.Balance = COALESCE(i.TotalIncome, 0) - COALESCE(e.TotalExpense, 0)
 WHERE ba.AccountID > 0;
+
+-- 8. SAVING GOAL CATEGORIES
+INSERT INTO SavingGoalCategories (
+    CategoryKey,
+    CategoryName,
+    IconEmoji,
+    Description,
+    IsCustomAllowed,
+    SortOrder
+)
+VALUES
+    ('EMERGENCY_FUND', 'Emergency Fund', '🛟', 'Safety fund for unexpected expenses.', 0, 1),
+    ('VACATION', 'Vacation / Travel', '🏝️', 'Saving for trips, vacation, or travel plans.', 0, 2),
+    ('LAPTOP', 'Laptop / Computer', '💻', 'Saving for laptop, computer, or work equipment.', 0, 3),
+    ('HOME_DOWN_PAYMENT', 'Home Down Payment', '🏠', 'Saving for house or apartment down payment.', 0, 4),
+    ('CAR', 'Car / Vehicle', '🚗', 'Saving for car, motorbike, or other vehicle.', 0, 5),
+    ('EDUCATION', 'Education', '🎓', 'Saving for tuition, courses, or learning expenses.', 0, 6),
+    ('WEDDING', 'Wedding', '💍', 'Saving for wedding or marriage plans.', 0, 7),
+    ('HEALTH', 'Health / Medical', '🏥', 'Saving for healthcare or medical expenses.', 0, 8),
+    ('BUSINESS', 'Business', '💼', 'Saving for business or startup plans.', 0, 9),
+    ('INVESTMENT', 'Investment', '📈', 'Saving for investment goals.', 0, 10),
+    ('GIFT', 'Gift', '🎁', 'Saving for gifts or special occasions.', 0, 11),
+    ('OTHER', 'Other / Custom', '💰', 'Custom saving goal category.', 1, 99);
+
+-- 9. SAVING GOALS
+INSERT INTO SavingGoals (
+    UserID,
+    LinkedAccountID,
+    GoalName,
+    GoalType,
+    GoalCategoryID,
+    CustomGoalCategoryName,
+    TargetAmount,
+    CurrentAmount,
+    StartDate,
+    TargetDate,
+    AnnualGrowthRate,
+    Status,
+    Notes
+)
+SELECT
+    u.UserID,
+    MIN(ba.AccountID),
+    'Emergency Fund',
+    'SAVE_UP',
+    c.GoalCategoryID,
+    NULL,
+    50000000.00,
+    8000000.00,
+    CURDATE(),
+    DATE_ADD(CURDATE(), INTERVAL 10 MONTH),
+    0.00,
+    'ACTIVE',
+    'Build a safety fund for unexpected expenses.'
+FROM Users u
+JOIN BankAccounts ba ON u.UserID = ba.UserID
+JOIN SavingGoalCategories c ON c.CategoryKey = 'EMERGENCY_FUND'
+GROUP BY u.UserID, c.GoalCategoryID;
+
+INSERT INTO SavingGoals (
+    UserID,
+    LinkedAccountID,
+    GoalName,
+    GoalType,
+    GoalCategoryID,
+    CustomGoalCategoryName,
+    TargetAmount,
+    CurrentAmount,
+    StartDate,
+    TargetDate,
+    AnnualGrowthRate,
+    Status,
+    Notes
+)
+SELECT
+    u.UserID,
+    MIN(ba.AccountID),
+    'Buy a Laptop',
+    'SAVE_UP',
+    c.GoalCategoryID,
+    NULL,
+    25000000.00,
+    10000000.00,
+    CURDATE(),
+    DATE_ADD(CURDATE(), INTERVAL 5 MONTH),
+    0.00,
+    'ACTIVE',
+    'Personal technology upgrade goal.'
+FROM Users u
+JOIN BankAccounts ba ON u.UserID = ba.UserID
+JOIN SavingGoalCategories c ON c.CategoryKey = 'LAPTOP'
+GROUP BY u.UserID, c.GoalCategoryID;
+
+INSERT INTO SavingGoals (
+    UserID,
+    LinkedAccountID,
+    GoalName,
+    GoalType,
+    GoalCategoryID,
+    CustomGoalCategoryName,
+    TargetAmount,
+    CurrentAmount,
+    StartDate,
+    TargetDate,
+    AnnualGrowthRate,
+    Status,
+    Notes
+)
+SELECT
+    u.UserID,
+    MIN(ba.AccountID),
+    'Personal Saving',
+    'SAVE_UP',
+    c.GoalCategoryID,
+    'My custom saving plan',
+    15000000.00,
+    2000000.00,
+    CURDATE(),
+    DATE_ADD(CURDATE(), INTERVAL 6 MONTH),
+    0.00,
+    'ACTIVE',
+    'Custom saving goal.'
+FROM Users u
+JOIN BankAccounts ba ON u.UserID = ba.UserID
+JOIN SavingGoalCategories c ON c.CategoryKey = 'OTHER'
+GROUP BY u.UserID, c.GoalCategoryID;
+
+-- 10. GOAL CONTRIBUTIONS
+INSERT INTO GoalContributions (
+    GoalID,
+    UserID,
+    AccountID,
+    Amount,
+    ContributionType,
+    ContributionDate,
+    Description
+)
+SELECT
+    g.GoalID,
+    g.UserID,
+    g.LinkedAccountID,
+    2000000.00,
+    'DEPOSIT',
+    CURDATE(),
+    'Initial goal contribution'
+FROM SavingGoals g
+WHERE g.GoalName IN ('Emergency Fund', 'Buy a Laptop');

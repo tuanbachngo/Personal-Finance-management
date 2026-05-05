@@ -22,6 +22,7 @@ export default function LoginPage() {
   const router = useRouter();
   const { ready, isAuthenticated, setSession } = useAuth();
   const [formError, setFormError] = useState("");
+  const [redirectAfterLogin, setRedirectAfterLogin] = useState(false);
 
   const {
     register,
@@ -36,10 +37,10 @@ export default function LoginPage() {
   });
 
   useEffect(() => {
-    if (ready && isAuthenticated) {
+    if (ready && isAuthenticated && !redirectAfterLogin) {
       router.replace("/dashboard");
     }
-  }, [ready, isAuthenticated, router]);
+  }, [ready, isAuthenticated, redirectAfterLogin, router]);
 
   const mutation = useMutation({
     mutationFn: login
@@ -49,8 +50,9 @@ export default function LoginPage() {
     setFormError("");
     try {
       const result = await mutation.mutateAsync(values);
+      setRedirectAfterLogin(true);
       setSession(result);
-      router.push("/dashboard");
+      router.replace("/dashboard?welcome=1");
     } catch (error: unknown) {
       const message = extractApiErrorMessage(error, "Login failed.");
       setFormError(message);
