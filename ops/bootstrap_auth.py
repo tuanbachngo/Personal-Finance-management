@@ -90,6 +90,21 @@ def main() -> None:
     seed_sample_user_password = _optional_env("PF_SEED_SAMPLE_USER_PASSWORD", "")
     force_reset = _env_bool("PF_FORCE_RESET_SAMPLE_PASSWORDS", False)
 
+    required_db_vars = ["MYSQL_HOST", "MYSQL_PORT", "MYSQL_USER", "MYSQL_PASSWORD", "MYSQL_DATABASE"]
+    missing_db_vars = [name for name in required_db_vars if not os.getenv(name, "").strip()]
+
+    if missing_db_vars:
+        raise ValueError(
+            "Missing database environment variables for bootstrap: "
+            + ", ".join(missing_db_vars)
+        )
+    
+    print("Bootstrap DB target:")
+    print(f"- MYSQL_HOST={os.getenv('MYSQL_HOST')}")
+    print(f"- MYSQL_PORT={os.getenv('MYSQL_PORT')}")
+    print(f"- MYSQL_USER={os.getenv('MYSQL_USER')}")
+    print(f"- MYSQL_DATABASE={os.getenv('MYSQL_DATABASE')}")
+
     connection = get_connection()
     service = FinanceService(connection)
     try:

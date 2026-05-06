@@ -67,6 +67,7 @@ def create_income(
             user_id=payload.user_id,
             account_id=payload.account_id,
             amount=payload.amount,
+            transaction_date=payload.transaction_date,
             description=payload.description,
         )
     except ValueError as err:
@@ -86,6 +87,7 @@ def update_income(
             user_id=payload.user_id,
             account_id=payload.account_id,
             amount=payload.amount,
+            transaction_date=payload.transaction_date,
             description=payload.description,
         )
     except ValueError as err:
@@ -137,6 +139,7 @@ def create_expense(
             account_id=payload.account_id,
             category_id=payload.category_id,
             amount=payload.amount,
+            transaction_date=payload.transaction_date,
             description=payload.description,
         )
     except ValueError as err:
@@ -157,6 +160,7 @@ def update_expense(
             account_id=payload.account_id,
             category_id=payload.category_id,
             amount=payload.amount,
+            transaction_date=payload.transaction_date,
             description=payload.description,
         )
     except ValueError as err:
@@ -171,4 +175,3 @@ def delete_expense(expense_id: int, ctx: AuthContext = Depends(get_authenticated
     except ValueError as err:
         raise map_value_error_to_http(err, default_status=400) from err
     return ApiMessageResponse(message="Expense deleted successfully.")
-

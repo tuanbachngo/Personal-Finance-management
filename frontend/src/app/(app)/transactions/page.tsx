@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { AuthGuard } from "@/components/auth/auth-guard";
 import { ErrorState } from "@/components/common/error-state";
 import { LoadingSkeleton } from "@/components/common/loading-skeleton";
+import { ImportTransactionsModal } from "@/components/finance/import-transactions-modal";
 import { TransactionModal } from "@/components/finance/transaction-modal";
 import { AppShell } from "@/components/layout/app-shell";
 import {
@@ -39,6 +40,7 @@ export default function TransactionsPage() {
   const [accountId, setAccountId] = useState<number | null>(null);
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [editQueue, setEditQueue] = useState<TransactionRecord[]>([]);
@@ -81,9 +83,17 @@ export default function TransactionsPage() {
   }, [categoriesQuery.data]);
 
   const visibleTransactions = useMemo(() => {
-    return (transactionsQuery.data || []).filter(
-      (row) => String(row.TransactionType).toUpperCase() === activeTab
-    );
+    return (transactionsQuery.data || [])
+      .filter((row) => String(row.TransactionType).toUpperCase() === activeTab)
+      .slice()
+      .sort((a, b) => {
+        const dateDiff =
+          new Date(b.TransactionDate).getTime() - new Date(a.TransactionDate).getTime();
+        if (dateDiff !== 0) {
+          return dateDiff;
+        }
+        return Number(b.TransactionID) - Number(a.TransactionID);
+      });
   }, [transactionsQuery.data, activeTab]);
 
   const handleSelectionChange = (id: string, checked: boolean) => {
@@ -144,7 +154,7 @@ export default function TransactionsPage() {
     <AuthGuard>
       <AppShell
         title="Transactions"
-        subtitle={`Browse and manage transactions for ${user?.UserName || `UserID ${userId ?? "-"}`}`}
+        subtitle={`Browse and manage transactions for ${user?.UserName || "selected user"}`}
       >
         <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex w-full flex-col gap-3 md:flex-row md:items-center">
@@ -203,6 +213,13 @@ export default function TransactionsPage() {
               </button>
             ) : (
               <>
+                <button
+                  type="button"
+                  onClick={() => setIsImportModalOpen(true)}
+                  className="focus-ring rounded-xl border border-border bg-surface px-4 py-2 text-sm font-semibold text-text transition-colors hover:bg-surface-hover"
+                >
+                  Import Transactions
+                </button>
                 <button
                   type="button"
                   onClick={() => setIsEditMode(true)}
@@ -271,13 +288,11 @@ export default function TransactionsPage() {
                       {visibleTransactions.map((row) => {
                         const rowId = getTransactionKey(row);
                         const selected = selectedIds.includes(rowId);
-                        const accountName =
-                          accountById.get(row.AccountID) || `Account #${row.AccountID}`;
+                        const accountName = accountById.get(row.AccountID) || "Unknown account";
                         const categoryName =
                           row.CategoryID === null
                             ? "-"
-                            : categoryById.get(row.CategoryID) ||
-                              `Category #${row.CategoryID}`;
+                            : categoryById.get(row.CategoryID) || "Uncategorized";
 
                         return (
                           <tr
@@ -357,8 +372,14 @@ export default function TransactionsPage() {
           isOpen={isAddModalOpen || editQueue.length > 0}
           mode={editQueue.length > 0 ? "EDIT" : "ADD"}
           transaction={currentEditTransaction}
+          existingTransactions={transactionsQuery.data || []}
           onClose={handleModalClose}
           onSuccess={handleModalSuccess}
+        />
+        <ImportTransactionsModal
+          isOpen={isImportModalOpen}
+          onClose={() => setIsImportModalOpen(false)}
+          onImported={() => transactionsQuery.refetch()}
         />
       </AppShell>
     </AuthGuard>

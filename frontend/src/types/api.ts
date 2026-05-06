@@ -132,6 +132,7 @@ export type IncomeCreateRequest = {
   user_id: number;
   account_id: number;
   amount: number;
+  transaction_date?: string | null;
   description?: string;
 };
 
@@ -142,6 +143,7 @@ export type ExpenseCreateRequest = {
   account_id: number;
   category_id: number;
   amount: number;
+  transaction_date?: string | null;
   description?: string;
 };
 
@@ -191,6 +193,9 @@ export type BudgetPlanRecord = {
   BudgetMonth: number;
   PlannedAmount: number;
   WarningPercent: number;
+  IsSoftLocked: number;
+  BudgetPriority: "LOW" | "MEDIUM" | "HIGH" | string;
+  Notes: string | null;
   CreatedAt: string | null;
 };
 
@@ -216,9 +221,104 @@ export type BudgetCreateRequest = {
   budget_month: number;
   planned_amount: number;
   warning_percent: number;
+  is_soft_locked?: number;
+  budget_priority?: "LOW" | "MEDIUM" | "HIGH" | string;
+  notes?: string | null;
 };
 
 export type BudgetUpdateRequest = BudgetCreateRequest;
+
+export type FixedExpenseItem = {
+  item_name: string;
+  amount: number;
+};
+
+export type BudgetSettingsRequest = {
+  user_id: number;
+  budget_year: number;
+  budget_month: number;
+  expected_income: number;
+  fixed_expense_estimate: number;
+  goal_contribution_target: number;
+  emergency_buffer: number;
+  fixed_expense_items: FixedExpenseItem[];
+};
+
+export type BudgetSettingsResponse = {
+  user_id: number;
+  budget_year: number;
+  budget_month: number;
+  expected_income: number;
+  fixed_expense_estimate: number;
+  fixed_expense_items: FixedExpenseItem[];
+  goal_contribution_target: number;
+  emergency_buffer: number;
+  available_to_budget: number;
+  total_planned_budget: number;
+  remaining_to_allocate: number;
+  budget_health: "HEALTHY" | "CAUTION" | "RISKY" | "OVERPLANNED" | string;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export type BudgetCategoryGuardrail = {
+  budget_id: number;
+  category_id: number;
+  category_name: string;
+  planned_amount: number;
+  spent_amount: number;
+  remaining_budget: number;
+  warning_percent: number;
+  alert_level: string;
+  safe_daily_spend: number;
+  safe_weekly_spend: number;
+  days_left_in_month: number;
+  spending_pace_status: "ON_TRACK" | "WATCH" | "OVER_PACE" | "EXCEEDED" | string;
+  usage_percent: number;
+  is_soft_locked: number;
+  budget_priority: "LOW" | "MEDIUM" | "HIGH" | string;
+  notes: string | null;
+  historical_average_spent: number;
+};
+
+export type BudgetOverviewResponse = {
+  user_id: number;
+  budget_year: number;
+  budget_month: number;
+  expected_income: number;
+  fixed_expense_estimate: number;
+  fixed_expense_items: FixedExpenseItem[];
+  goal_contribution_target: number;
+  emergency_buffer: number;
+  available_to_budget: number;
+  total_planned_budget: number;
+  remaining_to_allocate: number;
+  total_spent: number;
+  remaining_budget: number;
+  budget_health: "HEALTHY" | "CAUTION" | "RISKY" | "OVERPLANNED" | string;
+  warnings: string[];
+  categories: BudgetCategoryGuardrail[];
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export type CanISpendRequest = {
+  user_id: number;
+  category_id: number;
+  amount: number;
+  budget_year: number;
+  budget_month: number;
+};
+
+export type CanISpendResponse = {
+  decision: "SAFE" | "CAUTION" | "EXCEEDS_BUDGET" | "SOFT_LOCKED" | string;
+  message: string;
+  remaining_before: number;
+  remaining_after: number;
+  safe_daily_spend: number;
+  usage_percent_after: number | null;
+  requires_confirmation: boolean;
+};
 
 export type SpendingAlert = {
   BudgetID: number;
@@ -372,5 +472,65 @@ export type GoalContributionCreateRequest = {
   contribution_type: string;
   contribution_date?: string | null;
   description?: string | null;
+};
+
+export type ImportPreviewRow = {
+  row_id: number;
+  row_number: number;
+  raw_date: string | null;
+  raw_description: string | null;
+  raw_amount: string | null;
+  raw_type: string | null;
+  parsed_date: string | null;
+  parsed_amount: number | null;
+  parsed_type: "INCOME" | "EXPENSE" | string | null;
+  suggested_category_id: number | null;
+  suggested_category_name: string | null;
+  is_duplicate: number;
+  action: "IMPORT" | "SKIP" | string;
+  error_message: string | null;
+};
+
+export type ImportPreviewResponse = {
+  batch_id: number;
+  status: string;
+  total_rows: number;
+  rows: ImportPreviewRow[];
+};
+
+export type ImportConfirmRowUpdate = {
+  row_id: number;
+  action: "IMPORT" | "SKIP";
+  final_category_id?: number | null;
+};
+
+export type ImportConfirmRequest = {
+  batch_id: number;
+  user_id?: number;
+  rows: ImportConfirmRowUpdate[];
+};
+
+export type ImportConfirmResponse = {
+  message: string;
+  batch_id: number;
+  imported_rows: number;
+  skipped_rows: number;
+  failed_rows: number;
+};
+
+export type ImportHistoryRecord = {
+  batch_id: number;
+  user_id: number;
+  account_id: number;
+  bank_name: string | null;
+  file_name: string | null;
+  file_type: string | null;
+  status: string;
+  total_rows: number;
+  imported_rows: number;
+  skipped_rows: number;
+  failed_rows: number;
+  created_at: string;
+  confirmed_at: string | null;
 };
 

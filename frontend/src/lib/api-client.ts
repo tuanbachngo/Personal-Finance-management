@@ -6,9 +6,14 @@ import type {
   BalanceHistoryRecord,
   BankInfo,
   BudgetCreateRequest,
+  BudgetOverviewResponse,
   BudgetPlanRecord,
+  BudgetSettingsRequest,
+  BudgetSettingsResponse,
   BudgetStatusRecord,
   BudgetUpdateRequest,
+  CanISpendRequest,
+  CanISpendResponse,
   CategoryInfo,
   CategorySpendingPoint,
   CreateEntityResponse,
@@ -43,6 +48,10 @@ import type {
   GoalProgressRecord,
   GoalRecord,
   GoalUpdateRequest,
+  ImportConfirmRequest,
+  ImportConfirmResponse,
+  ImportHistoryRecord,
+  ImportPreviewResponse,
 } from "@/types/api";
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL?.trim() || "http://localhost:8000/api/v1";
@@ -403,5 +412,76 @@ export async function createGoalContribution(
     `/goals/${goalId}/contributions`,
     payload
   );
+  return response.data;
+}
+
+export async function getBudgetSettings(params: {
+  user_id?: number;
+  budget_year?: number | null;
+  budget_month?: number | null;
+}): Promise<BudgetSettingsResponse> {
+  const response = await apiClient.get<BudgetSettingsResponse>("/budgets/settings", { params });
+  return response.data;
+}
+
+export async function upsertBudgetSettings(
+  payload: BudgetSettingsRequest
+): Promise<BudgetSettingsResponse> {
+  const response = await apiClient.put<BudgetSettingsResponse>("/budgets/settings", payload);
+  return response.data;
+}
+
+export async function getBudgetOverview(params: {
+  user_id?: number;
+  budget_year?: number | null;
+  budget_month?: number | null;
+}): Promise<BudgetOverviewResponse> {
+  const response = await apiClient.get<BudgetOverviewResponse>("/budgets/overview", { params });
+  return response.data;
+}
+
+export async function canISpend(payload: CanISpendRequest): Promise<CanISpendResponse> {
+  const response = await apiClient.post<CanISpendResponse>("/budgets/can-i-spend", payload);
+  return response.data;
+}
+
+export async function previewTransactionImport(params: {
+  file: File;
+  account_id: number;
+  user_id?: number;
+}): Promise<ImportPreviewResponse> {
+  const formData = new FormData();
+  formData.append("file", params.file);
+  formData.append("account_id", String(params.account_id));
+  if (params.user_id !== undefined) {
+    formData.append("user_id", String(params.user_id));
+  }
+
+  const response = await apiClient.post<ImportPreviewResponse>(
+    "/imports/transactions/preview",
+    formData,
+    {
+      headers: {
+        "Content-Type": "multipart/form-data"
+      }
+    }
+  );
+  return response.data;
+}
+
+export async function confirmTransactionImport(
+  payload: ImportConfirmRequest
+): Promise<ImportConfirmResponse> {
+  const response = await apiClient.post<ImportConfirmResponse>(
+    "/imports/transactions/confirm",
+    payload
+  );
+  return response.data;
+}
+
+export async function getImportHistory(userId?: number): Promise<ImportHistoryRecord[]> {
+  const response = await apiClient.get<ImportHistoryRecord[]>("/imports/transactions/history", {
+    params: { user_id: userId }
+  });
   return response.data;
 }

@@ -7,10 +7,12 @@ It avoids raw SQL and keeps business flow easy to follow.
 
 import hashlib
 import hmac
+import json
 import logging
 import os
 import re
 import secrets
+import calendar
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, List, Optional
@@ -54,6 +56,9 @@ class FinanceService:
     GOAL_CONTRIBUTION_TYPE_VALUES = {"DEPOSIT", "WITHDRAW"}
     MIN_WARNING_PERCENT = Decimal("0")
     MAX_WARNING_PERCENT = Decimal("100")
+    BUDGET_PRIORITY_VALUES = {"LOW", "MEDIUM", "HIGH"}
+    BUDGET_HEALTH_VALUES = {"HEALTHY", "CAUTION", "RISKY", "OVERPLANNED"}
+    SPENDING_PACE_VALUES = {"ON_TRACK", "WATCH", "OVER_PACE", "EXCEEDED"}
     HASH_ALGO_SHA256 = "SHA256"
     HASH_ALGO_PBKDF2 = "PBKDF2_SHA256"
     HASH_ALGO_ARGON2ID = "ARGON2ID"
@@ -550,6 +555,102 @@ class FinanceService:
             raise ValueError("Budget year must be 2000 or later.")
         if budget_month < 1 or budget_month > 12:
             raise ValueError("Budget month must be between 1 and 12.")
+
+    def _validate_non_negative_amount(self, value: float, field_name: str) -> float:
+        try:
+            amount_decimal = Decimal(str(value))
+        except (InvalidOperation, ValueError, TypeError):
+            raise ValueError(f"{field_name} must be a valid number.") from None
+        if amount_decimal < 0:
+            raise ValueError(f"{field_name} cannot be negative.")
+        if amount_decimal > self.MAX_TRANSACTION_AMOUNT:
+            raise ValueError(f"{field_name} is too large.")
+        return float(amount_decimal)
+
+    @staticmethod
+    def _validate_soft_lock_flag(is_soft_locked: Optional[int]) -> int:
+        if is_soft_locked in {None, 0, False}:
+            return 0
+        if is_soft_locked in {1, True}:
+            return 1
+        raise ValueError("Soft lock must be either 0 or 1.")
+
+    @classmethod
+    def _validate_budget_priority(cls, priority: Optional[str]) -> str:
+        normalized = (priority or "MEDIUM").strip().upper()
+        if normalized not in cls.BUDGET_PRIORITY_VALUES:
+            raise ValueError("Budget priority must be LOW, MEDIUM, or HIGH.")
+        return normalized
+
+    @staticmethod
+    def _normalize_notes(notes: Optional[str]) -> Optional[str]:
+        if notes is None:
+            return None
+        normalized = notes.strip()
+        return normalized or None
+
+    def _normalize_fixed_expense_items(
+        self, items: Optional[List[Dict[str, Any]]]
+    ) -> List[Dict[str, Any]]:
+        if items is None:
+            return []
+        normalized: List[Dict[str, Any]] = []
+        for raw in items:
+            if not isinstance(raw, dict):
+                continue
+            item_name = str(raw.get("item_name", "")).strip()
+            if not item_name:
+                continue
+            amount = self._validate_non_negative_amount(raw.get("amount", 0), "Fixed expense amount")
+            normalized.append({"item_name": item_name[:100], "amount": float(amount)})
+        return normalized
+
+    @staticmethod
+    def _month_boundaries(budget_year: int, budget_month: int) -> tuple[date, date, int]:
+        days_in_month = calendar.monthrange(budget_year, budget_month)[1]
+        first_day = date(budget_year, budget_month, 1)
+        last_day = date(budget_year, budget_month, days_in_month)
+        return first_day, last_day, days_in_month
+
+    def _get_period_progress(self, budget_year: int, budget_month: int) -> Dict[str, float]:
+        _, last_day, days_in_month = self._month_boundaries(budget_year, budget_month)
+        today = date.today()
+
+        if budget_year < today.year or (budget_year == today.year and budget_month < today.month):
+            elapsed_days = days_in_month
+        elif budget_year > today.year or (budget_year == today.year and budget_month > today.month):
+            elapsed_days = 0
+        else:
+            elapsed_days = today.day
+
+        days_left = max(days_in_month - elapsed_days, 0)
+        elapsed_ratio = (elapsed_days / days_in_month) if days_in_month > 0 else 0.0
+        return {
+            "days_in_month": float(days_in_month),
+            "elapsed_days": float(elapsed_days),
+            "days_left": float(days_left),
+            "elapsed_ratio": float(elapsed_ratio),
+            "is_past_period": float(1 if today > last_day else 0),
+        }
+
+    @classmethod
+    def _determine_pace_status(
+        cls,
+        planned_amount: float,
+        spent_amount: float,
+        elapsed_ratio: float,
+    ) -> str:
+        if planned_amount <= 0:
+            return "ON_TRACK"
+        if spent_amount >= planned_amount:
+            return "EXCEEDED"
+
+        actual_ratio = spent_amount / planned_amount
+        if actual_ratio <= elapsed_ratio + 0.05:
+            return "ON_TRACK"
+        if actual_ratio <= elapsed_ratio + 0.20:
+            return "WATCH"
+        return "OVER_PACE"
 
     @classmethod
     def _validate_user_name(cls, user_name: str) -> str:
@@ -1719,6 +1820,7 @@ class FinanceService:
         account_id: int,
         amount: float,
         description: str = "",
+        transaction_date: Optional[Any] = None,
     ) -> None:
         user_id = self._resolve_user_scope(user_id)
         if user_id is None:
@@ -1726,7 +1828,14 @@ class FinanceService:
         self._validate_user(user_id)
         self._validate_account(user_id, account_id)
         self._validate_positive_amount(amount)
-        self.income_repo.add_income(user_id, account_id, amount, description)
+        normalized_date = self._normalize_date_input(transaction_date, "Transaction date")
+        self.income_repo.add_income(
+            user_id=user_id,
+            account_id=account_id,
+            amount=amount,
+            description=description,
+            transaction_date=normalized_date,
+        )
 
     def create_expense(
         self,
@@ -1735,6 +1844,7 @@ class FinanceService:
         category_id: int,
         amount: float,
         description: str = "",
+        transaction_date: Optional[Any] = None,
     ) -> None:
         user_id = self._resolve_user_scope(user_id)
         if user_id is None:
@@ -1743,9 +1853,15 @@ class FinanceService:
         self._validate_account(user_id, account_id)
         self._validate_category(category_id)
         self._validate_positive_amount(amount)
+        normalized_date = self._normalize_date_input(transaction_date, "Transaction date")
         try:
             self.expense_repo.add_expense(
-                user_id, account_id, category_id, amount, description
+                user_id=user_id,
+                account_id=account_id,
+                category_id=category_id,
+                amount=amount,
+                description=description,
+                transaction_date=normalized_date,
             )
         except Exception as err:
             mapped_error = self._map_expense_db_error(err)
@@ -1760,6 +1876,7 @@ class FinanceService:
         account_id: int,
         amount: float,
         description: str = "",
+        transaction_date: Optional[Any] = None,
     ) -> None:
         user_id = self._resolve_user_scope(user_id)
         if user_id is None:
@@ -1769,11 +1886,13 @@ class FinanceService:
         self._validate_income_belongs_to_user(income_id, user_id)
         self._validate_account(user_id, account_id)
         self._validate_positive_amount(amount)
+        normalized_date = self._normalize_date_input(transaction_date, "Transaction date")
         self.income_repo.update_income(
             income_id,
             user_id,
             account_id,
             amount,
+            normalized_date,
             description,
         )
 
@@ -1785,6 +1904,7 @@ class FinanceService:
         category_id: int,
         amount: float,
         description: str = "",
+        transaction_date: Optional[Any] = None,
     ) -> None:
         user_id = self._resolve_user_scope(user_id)
         if user_id is None:
@@ -1795,6 +1915,7 @@ class FinanceService:
         self._validate_account(user_id, account_id)
         self._validate_category(category_id)
         self._validate_positive_amount(amount)
+        normalized_date = self._normalize_date_input(transaction_date, "Transaction date")
         try:
             self.expense_repo.update_expense(
                 expense_id,
@@ -1802,6 +1923,7 @@ class FinanceService:
                 account_id,
                 category_id,
                 amount,
+                normalized_date,
                 description,
             )
         except Exception as err:
@@ -1828,6 +1950,9 @@ class FinanceService:
         budget_month: int,
         planned_amount: float,
         warning_percent: float,
+        is_soft_locked: int = 0,
+        budget_priority: str = "MEDIUM",
+        notes: Optional[str] = None,
     ) -> None:
         user_id = self._resolve_user_scope(user_id)
         if user_id is None:
@@ -1837,6 +1962,9 @@ class FinanceService:
         self._validate_budget_period(budget_year, budget_month)
         self._validate_positive_amount(planned_amount)
         self._validate_warning_percent(warning_percent)
+        normalized_soft_lock = self._validate_soft_lock_flag(is_soft_locked)
+        normalized_priority = self._validate_budget_priority(budget_priority)
+        normalized_notes = self._normalize_notes(notes)
 
         duplicate = self.report_repo.find_budget_plan_duplicate(
             user_id=user_id,
@@ -1856,6 +1984,9 @@ class FinanceService:
             budget_month=budget_month,
             planned_amount=planned_amount,
             warning_percent=warning_percent,
+            is_soft_locked=normalized_soft_lock,
+            budget_priority=normalized_priority,
+            notes=normalized_notes,
         )
 
     def edit_budget_plan(
@@ -1867,6 +1998,9 @@ class FinanceService:
         budget_month: int,
         planned_amount: float,
         warning_percent: float,
+        is_soft_locked: int = 0,
+        budget_priority: str = "MEDIUM",
+        notes: Optional[str] = None,
     ) -> None:
         user_id = self._resolve_user_scope(user_id)
         if user_id is None:
@@ -1876,6 +2010,9 @@ class FinanceService:
         self._validate_budget_period(budget_year, budget_month)
         self._validate_positive_amount(planned_amount)
         self._validate_warning_percent(warning_percent)
+        normalized_soft_lock = self._validate_soft_lock_flag(is_soft_locked)
+        normalized_priority = self._validate_budget_priority(budget_priority)
+        normalized_notes = self._normalize_notes(notes)
 
         existing = self.report_repo.get_budget_plan_by_id(budget_id)
         if not existing:
@@ -1903,6 +2040,9 @@ class FinanceService:
             budget_month=budget_month,
             planned_amount=planned_amount,
             warning_percent=warning_percent,
+            is_soft_locked=normalized_soft_lock,
+            budget_priority=normalized_priority,
+            notes=normalized_notes,
         )
 
     def remove_budget_plan(self, budget_id: int, user_id: int) -> None:
@@ -1916,6 +2056,307 @@ class FinanceService:
         if existing["UserID"] != user_id:
             raise ValueError(f"BudgetID {budget_id} does not belong to UserID {user_id}.")
         self.report_repo.delete_budget_plan(budget_id)
+
+    def _build_budget_overview_payload(
+        self,
+        user_id: int,
+        budget_year: int,
+        budget_month: int,
+    ) -> Dict[str, Any]:
+        self._validate_user(user_id)
+        self._validate_budget_period(budget_year, budget_month)
+
+        settings_row = self.report_repo.get_budget_settings(user_id, budget_year, budget_month)
+        expected_income = float((settings_row or {}).get("ExpectedIncome", 0.0) or 0.0)
+        fixed_expense_estimate = float((settings_row or {}).get("FixedExpenseEstimate", 0.0) or 0.0)
+        fixed_expense_items_raw = (settings_row or {}).get("FixedExpenseItemsJson")
+        fixed_expense_items: List[Dict[str, Any]] = []
+        if fixed_expense_items_raw:
+            parsed_items = fixed_expense_items_raw
+            if isinstance(parsed_items, str):
+                try:
+                    parsed_items = json.loads(parsed_items)
+                except Exception:
+                    parsed_items = []
+            if isinstance(parsed_items, list):
+                fixed_expense_items = self._normalize_fixed_expense_items(parsed_items)
+        if fixed_expense_items:
+            fixed_expense_estimate = sum(float(item.get("amount", 0.0)) for item in fixed_expense_items)
+        goal_contribution_target = float((settings_row or {}).get("GoalContributionTarget", 0.0) or 0.0)
+        emergency_buffer = float((settings_row or {}).get("EmergencyBuffer", 0.0) or 0.0)
+
+        available_to_budget = (
+            expected_income
+            - fixed_expense_estimate
+            - goal_contribution_target
+            - emergency_buffer
+        )
+
+        plans = self.report_repo.get_budget_plans_by_user(
+            user_id=user_id,
+            budget_year=budget_year,
+            budget_month=budget_month,
+        )
+        status_rows = self.report_repo.get_budget_vs_actual(
+            budget_year=budget_year,
+            budget_month=budget_month,
+            user_id=user_id,
+        )
+        status_by_category = {int(row["CategoryID"]): row for row in status_rows}
+        progress = self._get_period_progress(budget_year, budget_month)
+        days_left = int(progress["days_left"])
+        elapsed_ratio = float(progress["elapsed_ratio"])
+        first_day, _, _ = self._month_boundaries(budget_year, budget_month)
+
+        categories: List[Dict[str, Any]] = []
+        total_planned = 0.0
+        total_spent = 0.0
+        has_high_historical_plan = False
+        has_over_pace = False
+
+        for plan in plans:
+            category_id = int(plan["CategoryID"])
+            status_row = status_by_category.get(category_id)
+            planned_amount = float(plan["PlannedAmount"])
+            spent_amount = float((status_row or {}).get("SpentAmount", 0.0) or 0.0)
+            remaining_budget = planned_amount - spent_amount
+            safe_remaining = max(remaining_budget, 0.0)
+
+            safe_daily_spend = safe_remaining / days_left if days_left > 0 else 0.0
+            safe_weekly_spend = safe_daily_spend * 7
+            usage_percent = (spent_amount / planned_amount * 100.0) if planned_amount > 0 else 0.0
+            pace_status = self._determine_pace_status(planned_amount, spent_amount, elapsed_ratio)
+            if pace_status in {"OVER_PACE", "EXCEEDED"}:
+                has_over_pace = True
+
+            historical_average = self.report_repo.get_average_monthly_category_spending(
+                user_id=user_id,
+                category_id=category_id,
+                cutoff_date=first_day,
+                lookback_months=3,
+            )
+            if historical_average > 0 and planned_amount > historical_average * 1.5:
+                has_high_historical_plan = True
+
+            categories.append(
+                {
+                    "budget_id": int(plan["BudgetID"]),
+                    "category_id": category_id,
+                    "category_name": plan["CategoryName"],
+                    "planned_amount": planned_amount,
+                    "spent_amount": spent_amount,
+                    "remaining_budget": remaining_budget,
+                    "warning_percent": float(plan["WarningPercent"]),
+                    "alert_level": str((status_row or {}).get("AlertLevel", "NORMAL")),
+                    "safe_daily_spend": safe_daily_spend,
+                    "safe_weekly_spend": safe_weekly_spend,
+                    "days_left_in_month": days_left,
+                    "spending_pace_status": pace_status,
+                    "usage_percent": usage_percent,
+                    "is_soft_locked": int(plan.get("IsSoftLocked", 0) or 0),
+                    "budget_priority": str(plan.get("BudgetPriority", "MEDIUM") or "MEDIUM"),
+                    "notes": plan.get("Notes"),
+                    "historical_average_spent": historical_average,
+                }
+            )
+
+            total_planned += planned_amount
+            total_spent += spent_amount
+
+        remaining_to_allocate = available_to_budget - total_planned
+        remaining_budget_total = total_planned - total_spent
+
+        if total_planned > 0 and available_to_budget <= 0:
+            budget_health = "OVERPLANNED"
+        elif available_to_budget > 0 and total_planned > available_to_budget * 1.2:
+            budget_health = "OVERPLANNED"
+        elif (available_to_budget > 0 and total_planned > available_to_budget * 1.1) or has_over_pace:
+            budget_health = "RISKY"
+        elif total_planned > available_to_budget or emergency_buffer <= 0 or has_high_historical_plan:
+            budget_health = "CAUTION"
+        else:
+            budget_health = "HEALTHY"
+
+        warnings: List[str] = []
+        if total_planned > available_to_budget:
+            warnings.append(
+                "Your planned budget is higher than your safe available amount."
+            )
+        if available_to_budget > 0 and total_planned > available_to_budget * 1.2:
+            warnings.append(
+                "This budget looks overplanned. Consider reducing flexible categories."
+            )
+        if emergency_buffer <= 0:
+            warnings.append("Emergency buffer is zero. Add a safety buffer for unexpected expenses.")
+        if has_high_historical_plan:
+            warnings.append(
+                "At least one category budget is more than 150% of recent spending history."
+            )
+        if has_over_pace:
+            warnings.append("Current spending pace is high for this period.")
+
+        return {
+            "user_id": user_id,
+            "budget_year": budget_year,
+            "budget_month": budget_month,
+            "expected_income": expected_income,
+            "fixed_expense_estimate": fixed_expense_estimate,
+            "fixed_expense_items": fixed_expense_items,
+            "goal_contribution_target": goal_contribution_target,
+            "emergency_buffer": emergency_buffer,
+            "available_to_budget": available_to_budget,
+            "total_planned_budget": total_planned,
+            "remaining_to_allocate": remaining_to_allocate,
+            "total_spent": total_spent,
+            "remaining_budget": remaining_budget_total,
+            "budget_health": budget_health,
+            "warnings": warnings,
+            "categories": categories,
+            "created_at": settings_row.get("CreatedAt") if settings_row else None,
+            "updated_at": settings_row.get("UpdatedAt") if settings_row else None,
+        }
+
+    def get_budget_settings(
+        self,
+        user_id: int,
+        budget_year: int,
+        budget_month: int,
+    ) -> Dict[str, Any]:
+        scoped_user_id = self._resolve_user_scope(user_id)
+        if scoped_user_id is None:
+            raise ValueError("User scope is required.")
+        return self._build_budget_overview_payload(scoped_user_id, budget_year, budget_month)
+
+    def get_budget_overview(
+        self,
+        user_id: int,
+        budget_year: int,
+        budget_month: int,
+    ) -> Dict[str, Any]:
+        scoped_user_id = self._resolve_user_scope(user_id)
+        if scoped_user_id is None:
+            raise ValueError("User scope is required.")
+        return self._build_budget_overview_payload(scoped_user_id, budget_year, budget_month)
+
+    def upsert_budget_settings(
+        self,
+        user_id: int,
+        budget_year: int,
+        budget_month: int,
+        expected_income: float,
+        fixed_expense_estimate: float,
+        goal_contribution_target: float,
+        emergency_buffer: float,
+        fixed_expense_items: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        scoped_user_id = self._resolve_user_scope(user_id)
+        if scoped_user_id is None:
+            raise ValueError("User scope is required.")
+        self._validate_user(scoped_user_id)
+        self._validate_budget_period(budget_year, budget_month)
+
+        validated_expected_income = self._validate_non_negative_amount(
+            expected_income, "Expected income"
+        )
+        validated_fixed_expense = self._validate_non_negative_amount(
+            fixed_expense_estimate, "Fixed expense estimate"
+        )
+        normalized_fixed_items = self._normalize_fixed_expense_items(fixed_expense_items)
+        if normalized_fixed_items:
+            validated_fixed_expense = float(
+                sum(float(item["amount"]) for item in normalized_fixed_items)
+            )
+        validated_goal_target = self._validate_non_negative_amount(
+            goal_contribution_target, "Goal contribution target"
+        )
+        validated_emergency_buffer = self._validate_non_negative_amount(
+            emergency_buffer, "Emergency buffer"
+        )
+        fixed_items_json = json.dumps(normalized_fixed_items, ensure_ascii=False)
+
+        self.report_repo.upsert_budget_settings(
+            user_id=scoped_user_id,
+            budget_year=budget_year,
+            budget_month=budget_month,
+            expected_income=validated_expected_income,
+            fixed_expense_estimate=validated_fixed_expense,
+            fixed_expense_items_json=fixed_items_json,
+            goal_contribution_target=validated_goal_target,
+            emergency_buffer=validated_emergency_buffer,
+        )
+        return self._build_budget_overview_payload(scoped_user_id, budget_year, budget_month)
+
+    def evaluate_can_i_spend(
+        self,
+        user_id: int,
+        category_id: int,
+        amount: float,
+        budget_year: int,
+        budget_month: int,
+    ) -> Dict[str, Any]:
+        scoped_user_id = self._resolve_user_scope(user_id)
+        if scoped_user_id is None:
+            raise ValueError("User scope is required.")
+
+        self._validate_user(scoped_user_id)
+        self._validate_category(category_id)
+        self._validate_budget_period(budget_year, budget_month)
+        self._validate_positive_amount(amount)
+
+        overview = self._build_budget_overview_payload(scoped_user_id, budget_year, budget_month)
+        category_row = next(
+            (row for row in overview["categories"] if int(row["category_id"]) == int(category_id)),
+            None,
+        )
+
+        if not category_row:
+            remaining_before = 0.0
+            remaining_after = remaining_before - float(amount)
+            return {
+                "decision": "CAUTION",
+                "message": "No budget plan found for this category in the selected month.",
+                "remaining_before": remaining_before,
+                "remaining_after": remaining_after,
+                "safe_daily_spend": 0.0,
+                "usage_percent_after": None,
+                "requires_confirmation": True,
+            }
+
+        planned_amount = float(category_row["planned_amount"])
+        spent_amount = float(category_row["spent_amount"])
+        remaining_before = planned_amount - spent_amount
+        remaining_after = remaining_before - float(amount)
+        safe_daily_spend = float(category_row["safe_daily_spend"])
+        usage_percent_after = (
+            ((spent_amount + float(amount)) / planned_amount) * 100.0
+            if planned_amount > 0
+            else None
+        )
+
+        if int(category_row.get("is_soft_locked", 0)) == 1:
+            decision = "SOFT_LOCKED"
+            message = (
+                "You soft-locked this category to reduce spending. Think twice before continuing."
+            )
+        elif float(amount) > remaining_before:
+            decision = "EXCEEDS_BUDGET"
+            message = "This purchase exceeds your remaining category budget."
+        elif safe_daily_spend > 0 and float(amount) > safe_daily_spend * 2:
+            decision = "CAUTION"
+            message = "This amount is more than 2x your safe daily spending for this category."
+        else:
+            decision = "SAFE"
+            message = "This purchase is within your remaining budget."
+
+        return {
+            "decision": decision,
+            "message": message,
+            "remaining_before": remaining_before,
+            "remaining_after": remaining_after,
+            "safe_daily_spend": safe_daily_spend,
+            "usage_percent_after": usage_percent_after,
+            "requires_confirmation": decision != "SAFE",
+        }
 
     # ----------------------------
     # Listing

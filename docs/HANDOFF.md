@@ -418,3 +418,290 @@ docker compose logs -f app
 - `docker compose exec backend python -m py_compile backend/app/routers/auth.py backend/app/schemas.py` -> pass
 - `docker compose up -d --build backend frontend` -> pass
 - `docker compose ps` -> backend/frontend/db/app running
+
+## Update 2026-05-05 (Phase 1 + Phase 2: Transactions Input + Import CSV/Excel)
+
+### What changed
+
+- Manual transaction input improvements (Next.js):
+  - Added date input to add/edit transaction flow.
+  - Removed raw ID labels from account/category selectors.
+  - Added duplicate warning (MVP) on frontend based on loaded transactions:
+    - checks same type/account/date/amount + similar description.
+  - Added rule-based category suggestion from description keywords:
+    - coffee/highlands/... -> food-like category
+    - grab/taxi/... -> transportation-like category
+    - shopee/lazada/... -> shopping-like category
+    - electric/water/internet/... -> utilities-like category
+    - hospital/pharmacy/... -> health/healthcare-like category
+  - Files:
+    - `frontend/src/components/finance/transaction-modal.tsx`
+    - `frontend/src/app/(app)/transactions/page.tsx`
+    - `frontend/src/types/api.ts`
+    - `frontend/src/lib/api-client.ts`
+
+- Backend transaction payload now supports optional date without forcing schema reset:
+  - Added `transaction_date` in create/update request schemas.
+  - Added passthrough in transaction router to service layer.
+  - Service/repository support optional transaction date:
+    - when date is provided, repository uses direct `INSERT/UPDATE` with date
+    - when date is omitted, existing stored-procedure flow remains unchanged.
+  - Files:
+    - `backend/app/schemas.py`
+    - `backend/app/routers/transactions.py`
+    - `python_app/services/finance_service.py`
+    - `python_app/repositories/income_repository.py`
+    - `python_app/repositories/expense_repository.py`
+
+- Transaction Import feature (CSV/Excel staging + confirm):
+  - Added new API router:
+    - `POST /api/v1/imports/transactions/preview`
+    - `POST /api/v1/imports/transactions/confirm`
+    - `GET /api/v1/imports/transactions/history`
+  - Supports CSV and Excel (`openpyxl`) preview parsing.
+  - Handles common columns:
+    - `Date/Transaction Date/Ngay giao dich`
+    - `Description/Note/Noi dung`
+    - `Amount` or `Debit/Credit`
+    - optional `Type`
+  - Adds duplicate hash detection against existing transactions and within batch.
+  - Suggests category using:
+    - user/global DB rules in `TransactionCategoryRules` (if available)
+    - fallback static keyword groups (rule-based, no ML).
+  - Confirm endpoint imports non-duplicate rows and respects row action `IMPORT/SKIP`.
+  - Files:
+    - `backend/app/routers/imports.py`
+    - `backend/app/main.py`
+    - `backend/app/schemas.py`
+    - `backend/requirements.txt` (added `openpyxl`, `python-multipart`)
+
+- Import persistence tables:
+  - Added to canonical schema:
+    - `TransactionImportBatches`
+    - `TransactionImportRows`
+    - `TransactionCategoryRules`
+  - Added migration for existing DBs:
+    - `database/migrations/003_add_transaction_import_tables.sql`
+  - File updated:
+    - `database/schema.sql`
+
+- New frontend page + navigation:
+  - Added `/imports` page with flow:
+    - upload file -> choose account -> preview -> review category/action -> confirm -> history
+  - Added sidebar item `Import Transactions`.
+  - Files:
+    - `frontend/src/app/(app)/imports/page.tsx`
+    - `frontend/src/components/layout/sidebar.tsx`
+
+### Commands run
+
+- `git status --short`
+- `cmd /c npm run build` (local) -> failed by environment `spawn EPERM` (host permission issue)
+- `docker compose up -d --build backend frontend` -> pass
+- `docker compose logs --tail=40 backend` -> pass after adding `python-multipart`
+- `Get-Content .\database\migrations\003_add_transaction_import_tables.sql -Raw | docker exec -i personal_finance_mysql sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" Personal_Finance'` -> pass
+- `docker compose exec backend python -m py_compile ...` (modified backend files) -> pass
+- `docker compose exec frontend npx tsc --noEmit` -> pass
+- `docker compose exec frontend npm run build` -> fails on pre-existing Next.js suspense rule in `/dashboard` and `/profile` (not introduced by this change)
+- `docker compose run --rm smoke-test` -> failed due auth env (`Invalid email or password`) in current environment
+
+### Current verification status
+
+- Backend container starts successfully and exposes health endpoint.
+- Import endpoints are registered in OpenAPI.
+- Frontend TypeScript type-check passes.
+- Full frontend production build still blocked by existing (pre-existing) `useSearchParams` suspense issue on `/dashboard` and `/profile`.
+- Core smoke-test in this environment currently blocked by missing/incorrect `SMOKE_ADMIN_*` credentials, not by import code path.
+
+## Update 2026-05-05 (Transactions UX refinements)
+
+### What changed
+
+- Removed standalone `Import Transactions` page route and moved import flow into Transactions page as an in-page modal action.
+- Added progressive import steps in modal:
+  - Step 1: choose file
+  - Step 2: choose bank/account
+  - Step 3: preview + edit category/action
+  - Step 4: confirm summary
+- Transactions list now sorts newest-first by date/time (descending).
+- Transaction edit modal now supports direct delete action.
+- Standardized displayed date format to day/month/year:
+  - updated shared formatter in `frontend/src/lib/format.ts`
+  - updated goals display row date to use shared formatter instead of raw `YYYY-MM-DD`.
+
+### Files touched in this update
+
+- `frontend/src/app/(app)/transactions/page.tsx`
+- `frontend/src/components/finance/import-transactions-modal.tsx`
+- `frontend/src/components/finance/transaction-modal.tsx`
+- `frontend/src/lib/format.ts`
+- `frontend/src/app/(app)/goals/page.tsx`
+- Removed file: `frontend/src/app/(app)/imports/page.tsx`
+
+### Verification
+
+- `docker compose exec frontend npx tsc --noEmit` -> pass
+- `docker compose up -d --build frontend` -> pass
+
+## Update 2026-05-05 (Smart Budget / Spending Guardrails MVP)
+
+### What changed
+
+- Added Smart Budget migration and canonical schema updates:
+  - New table `BudgetSettings`
+  - New columns on `BudgetPlans`:
+    - `IsSoftLocked`
+    - `BudgetPriority`
+    - `Notes`
+  - New migration:
+    - `database/migrations/004_smart_budget_guardrails.sql`
+  - Updated:
+    - `database/schema.sql`
+
+- Backend Budget API expanded:
+  - `GET /api/v1/budgets/settings`
+  - `PUT /api/v1/budgets/settings`
+  - `GET /api/v1/budgets/overview`
+  - `POST /api/v1/budgets/can-i-spend`
+  - Existing budget plan create/update now accepts:
+    - `is_soft_locked`
+    - `budget_priority`
+    - `notes`
+  - Updated files:
+    - `backend/app/routers/budgets.py`
+    - `backend/app/schemas.py`
+
+- Service/repository logic for guardrails:
+  - Budget settings upsert/get
+  - Budget overview aggregation (available-to-budget, planned/spent, warnings, health)
+  - Safe to spend (daily/weekly), pace status, and can-i-spend decision
+  - Budget plan persistence now includes soft lock/priority/notes
+  - Updated files:
+    - `python_app/repositories/report_repository.py`
+    - `python_app/services/finance_service.py`
+
+- Frontend budgets page redesigned to Smart Budget layout:
+  - Smart Budget Overview cards + health badge
+  - Budget Settings form
+  - Category Guardrails section:
+    - progress, safe spend/day/week, pace status
+    - soft lock toggle, priority selector, notes
+  - Can I Spend card
+  - Budget plan add/edit/delete kept in-page
+  - Updated files:
+    - `frontend/src/app/(app)/budgets/page.tsx`
+    - `frontend/src/lib/api-client.ts`
+    - `frontend/src/types/api.ts`
+
+- Transactions integration:
+  - Expense save flow now calls `can-i-spend` before submit and shows confirm warning for risky cases.
+  - Optional reason can be appended into description when user continues.
+  - Updated file:
+    - `frontend/src/components/finance/transaction-modal.tsx`
+
+### Commands run
+
+- `git status --short`
+- `docker compose exec frontend npx tsc --noEmit` -> pass
+- `docker compose exec backend python -m py_compile backend/app/routers/budgets.py backend/app/schemas.py python_app/repositories/report_repository.py python_app/services/finance_service.py` -> pass
+- `docker compose up -d --build backend frontend` -> pass
+- `docker compose ps` -> backend/frontend/db/app running
+- `docker cp .\database\migrations\004_smart_budget_guardrails.sql personal_finance_mysql:/tmp/004_smart_budget_guardrails.sql` -> pass
+- `docker exec personal_finance_mysql sh -lc 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; mysql -uroot Personal_Finance < /tmp/004_smart_budget_guardrails.sql'` -> pass
+- `docker compose exec frontend npm run build` -> failed with pre-existing Next.js runtime/build issue:
+  - `PageNotFoundError: Cannot find module for page: /_document`
+  - plus intermittent external font fetch failures in container environment
+
+### Current status
+
+- Smart Budget guardrails flow is implemented end-to-end (DB migration + backend APIs + frontend budgets + transaction pre-check).
+- Frontend type-check passes.
+- Backend Python compile checks pass.
+- Production `next build` still has an existing project-level issue unrelated to core smart-budget logic (`/_document` resolution in current container setup).
+
+## Update 2026-05-05 (Budgets UI cleanup + modal/chat UX)
+
+### What changed
+
+- Refactored Budgets page frontend only to simplify UX and reduce visual clutter.
+- Reworked numeric input behavior on Budgets to integer-only with live comma formatting.
+  - Added/used local helpers in page:
+    - `sanitizeDigits`
+    - `formatWithCommas`
+    - `parseInteger`
+- Replaced inline Budget Settings section with header button + overlay modal:
+  - `Budget Settings` button next to `Add Budget Plan`
+  - modal actions: `Save`, `Reset to 0`, `Close`
+  - reused existing `upsertBudgetSettings` API
+- Consolidated budget plan edit/delete flow:
+  - each category card has clear `Edit` + `Delete` actions
+  - edit opens modal with full form and inline `Delete` action
+- Simplified category budget cards:
+  - kept key info (planned/spent/remaining, progress, pace/status, priority, soft lock)
+  - removed dense multi-cell editing layout
+- Converted `Can I Spend` section to floating mini-chat:
+  - floating icon button bottom-right
+  - small chat-like panel for category + amount + check result
+  - reused existing `canISpend` endpoint
+
+### Files edited
+
+- `frontend/src/app/(app)/budgets/page.tsx`
+
+### Commands run
+
+- `git status --short`
+- `docker compose exec frontend npx tsc --noEmit` -> pass
+- `docker compose exec frontend npm run build` -> fails due existing unrelated issues:
+  - `/dashboard` and `/profile` require Suspense boundary for `useSearchParams`
+
+### Current status
+
+- Budgets page changes compile in TypeScript and run in dev/container.
+- Production build is still blocked by pre-existing dashboard/profile suspense issues outside this Budgets refactor.
+
+## Update 2026-05-05 (Recurring Budget Settings + fixed-expense items)
+
+### What changed
+
+- Implemented recurring settings semantics for Budget Settings:
+  - settings retrieval now resolves by **latest record with period <= selected month**
+  - effect: values entered for one month are reused by later months until changed again.
+- Added fixed-expense item list persistence in BudgetSettings:
+  - new DB column `FixedExpenseItemsJson` (migration 005)
+  - backend now stores/retrieves itemized fixed expenses and derives `fixed_expense_estimate` from item sums.
+- Budgets UI settings modal now supports:
+  - itemized `Fixed Expense Items` (name + amount rows)
+  - automatic total calculation
+  - save/reset behavior with integer + comma input formatting.
+- Kept behavior that settings changes are versioned by selected month and apply to subsequent months via fallback lookup.
+- Budget health visual size was reduced in overview:
+  - now shown as compact badge instead of full-size KPI card.
+  - KPI cards for income/available/planned/remaining are wider and use compact typography.
+
+### Files edited
+
+- `database/migrations/005_budget_settings_recurring_items.sql` (new)
+- `database/schema.sql`
+- `python_app/repositories/report_repository.py`
+- `python_app/services/finance_service.py`
+- `backend/app/schemas.py`
+- `backend/app/routers/budgets.py`
+- `frontend/src/types/api.ts`
+- `frontend/src/app/(app)/budgets/page.tsx`
+
+### Commands run
+
+- `git status --short`
+- `docker compose exec backend python -m py_compile backend/app/routers/budgets.py backend/app/schemas.py python_app/repositories/report_repository.py python_app/services/finance_service.py` -> pass
+- `docker compose exec frontend npx tsc --noEmit` -> pass
+- `docker cp .\database\migrations\005_budget_settings_recurring_items.sql personal_finance_mysql:/tmp/005_budget_settings_recurring_items.sql` -> pass
+- `docker exec personal_finance_mysql sh -lc 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; mysql -uroot Personal_Finance < /tmp/005_budget_settings_recurring_items.sql'` -> pass
+- `docker compose up -d --build backend frontend` -> pass
+- `docker compose exec frontend npm run build` -> fails due existing unrelated `useSearchParams` suspense issue on `/dashboard` and `/profile`, and intermittent google-font fetch retries.
+
+### Current status
+
+- Recurring expected-income/fixed-expense behavior is implemented at backend + frontend.
+- Budgets page supports itemized fixed expenses and improved compact layout.
+- Type-check and backend compile checks pass.

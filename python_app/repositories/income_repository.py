@@ -2,6 +2,7 @@
 Income repository for Personal_Finance.
 """
 
+from datetime import date
 from typing import Any, Dict, List, Optional
 
 
@@ -50,14 +51,28 @@ class IncomeRepository:
             cursor.close()
 
     def add_income(
-        self, user_id: int, account_id: int, amount: float, description: str
+        self,
+        user_id: int,
+        account_id: int,
+        amount: float,
+        description: str,
+        transaction_date: Optional[date] = None,
     ) -> None:
         cursor = self.connection.cursor()
         try:
-            cursor.callproc(
-                "sp_add_income",
-                [user_id, account_id, amount, description],
-            )
+            if transaction_date is None:
+                cursor.callproc(
+                    "sp_add_income",
+                    [user_id, account_id, amount, description],
+                )
+            else:
+                cursor.execute(
+                    """
+                    INSERT INTO Income (UserID, AccountID, Amount, IncomeDate, Description)
+                    VALUES (%s, %s, %s, %s, %s)
+                    """,
+                    (user_id, account_id, amount, transaction_date, description),
+                )
             self.connection.commit()
         finally:
             cursor.close()
@@ -68,14 +83,29 @@ class IncomeRepository:
         user_id: int,
         account_id: int,
         amount: float,
-        description: str,
+        transaction_date: Optional[date] = None,
+        description: str = "",
     ) -> None:
         cursor = self.connection.cursor()
         try:
-            cursor.callproc(
-                "sp_update_income",
-                [income_id, user_id, account_id, amount, description],
-            )
+            if transaction_date is None:
+                cursor.callproc(
+                    "sp_update_income",
+                    [income_id, user_id, account_id, amount, description],
+                )
+            else:
+                cursor.execute(
+                    """
+                    UPDATE Income
+                    SET UserID = %s,
+                        AccountID = %s,
+                        Amount = %s,
+                        IncomeDate = %s,
+                        Description = %s
+                    WHERE IncomeID = %s
+                    """,
+                    (user_id, account_id, amount, transaction_date, description, income_id),
+                )
             self.connection.commit()
         finally:
             cursor.close()

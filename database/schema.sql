@@ -174,7 +174,126 @@ CREATE TABLE Expenses (
         ON UPDATE CASCADE
 );
 
--- 11. BUDGET PLANNING
+-- 11. TRANSACTION IMPORT BATCHES
+CREATE TABLE TransactionImportBatches (
+    BatchID BIGINT AUTO_INCREMENT PRIMARY KEY,
+    UserID INT NOT NULL,
+    AccountID INT NOT NULL,
+    FileName VARCHAR(255) NULL,
+    FileType ENUM('CSV', 'EXCEL') NOT NULL DEFAULT 'CSV',
+    Status ENUM('PREVIEWED', 'CONFIRMED', 'PARTIAL', 'FAILED') NOT NULL DEFAULT 'PREVIEWED',
+    TotalRows INT NOT NULL DEFAULT 0,
+    ImportedRows INT NOT NULL DEFAULT 0,
+    SkippedRows INT NOT NULL DEFAULT 0,
+    FailedRows INT NOT NULL DEFAULT 0,
+    CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ConfirmedAt DATETIME NULL,
+    CONSTRAINT fk_importbatches_user
+        FOREIGN KEY (UserID)
+        REFERENCES Users(UserID)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+    CONSTRAINT fk_importbatches_account_user
+        FOREIGN KEY (AccountID, UserID)
+        REFERENCES BankAccounts(AccountID, UserID)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE
+);
+
+-- 12. TRANSACTION IMPORT ROWS
+CREATE TABLE TransactionImportRows (
+    RowID BIGINT AUTO_INCREMENT PRIMARY KEY,
+    BatchID BIGINT NOT NULL,
+    RowNumber INT NOT NULL,
+    RawDate VARCHAR(64) NULL,
+    RawDescription VARCHAR(255) NULL,
+    RawAmount VARCHAR(64) NULL,
+    RawType VARCHAR(32) NULL,
+    ParsedDate DATE NULL,
+    ParsedAmount DECIMAL(15,2) NULL,
+    ParsedType ENUM('INCOME', 'EXPENSE') NULL,
+    SuggestedCategoryID INT NULL,
+    FinalCategoryID INT NULL,
+    IsDuplicate TINYINT(1) NOT NULL DEFAULT 0,
+    DuplicateHash CHAR(64) NULL,
+    ActionType ENUM('IMPORT', 'SKIP') NOT NULL DEFAULT 'IMPORT',
+    RowStatus ENUM('PREVIEW', 'IMPORTED', 'SKIPPED', 'FAILED') NOT NULL DEFAULT 'PREVIEW',
+    ErrorMessage VARCHAR(255) NULL,
+    CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_importrows_batch
+        FOREIGN KEY (BatchID)
+        REFERENCES TransactionImportBatches(BatchID)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+    CONSTRAINT fk_importrows_suggested_category
+        FOREIGN KEY (SuggestedCategoryID)
+        REFERENCES ExpenseCategories(CategoryID)
+        ON DELETE SET NULL
+        ON UPDATE CASCADE,
+    CONSTRAINT fk_importrows_final_category
+        FOREIGN KEY (FinalCategoryID)
+        REFERENCES ExpenseCategories(CategoryID)
+        ON DELETE SET NULL
+        ON UPDATE CASCADE
+);
+
+-- 13. TRANSACTION CATEGORY RULES
+CREATE TABLE TransactionCategoryRules (
+    RuleID BIGINT AUTO_INCREMENT PRIMARY KEY,
+    UserID INT NULL,
+    Keyword VARCHAR(100) NOT NULL,
+    CategoryID INT NOT NULL,
+    Priority INT NOT NULL DEFAULT 100,
+    IsActive TINYINT(1) NOT NULL DEFAULT 1,
+    CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_txn_rules_user
+        FOREIGN KEY (UserID)
+        REFERENCES Users(UserID)
+        ON DELETE SET NULL
+        ON UPDATE CASCADE,
+    CONSTRAINT fk_txn_rules_category
+        FOREIGN KEY (CategoryID)
+        REFERENCES ExpenseCategories(CategoryID)
+        ON DELETE RESTRICT
+        ON UPDATE CASCADE
+);
+
+-- 14. BUDGET SETTINGS
+-- One monthly setup row per user for smart budget guardrails.
+CREATE TABLE BudgetSettings (
+    BudgetSettingID INT AUTO_INCREMENT PRIMARY KEY,
+    UserID INT NOT NULL,
+    BudgetYear SMALLINT NOT NULL,
+    BudgetMonth TINYINT NOT NULL,
+    ExpectedIncome DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    FixedExpenseEstimate DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    FixedExpenseItemsJson JSON NULL,
+    GoalContributionTarget DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    EmergencyBuffer DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UpdatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT chk_budget_settings_year
+        CHECK (BudgetYear >= 2000),
+    CONSTRAINT chk_budget_settings_month
+        CHECK (BudgetMonth BETWEEN 1 AND 12),
+    CONSTRAINT chk_expected_income
+        CHECK (ExpectedIncome >= 0),
+    CONSTRAINT chk_fixed_expense_estimate
+        CHECK (FixedExpenseEstimate >= 0),
+    CONSTRAINT chk_goal_contribution_target
+        CHECK (GoalContributionTarget >= 0),
+    CONSTRAINT chk_emergency_buffer
+        CHECK (EmergencyBuffer >= 0),
+    CONSTRAINT uq_budget_settings_user_period
+        UNIQUE (UserID, BudgetYear, BudgetMonth),
+    CONSTRAINT fk_budget_settings_user
+        FOREIGN KEY (UserID)
+        REFERENCES Users(UserID)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE
+);
+
+-- 15. BUDGET PLANNING
 -- One budget plan per user + category + month.
 CREATE TABLE BudgetPlans (
     BudgetID INT AUTO_INCREMENT PRIMARY KEY,
@@ -184,6 +303,9 @@ CREATE TABLE BudgetPlans (
     BudgetMonth TINYINT NOT NULL,
     PlannedAmount DECIMAL(15,2) NOT NULL,
     WarningPercent DECIMAL(5,2) NOT NULL DEFAULT 80.00,
+    IsSoftLocked TINYINT(1) NOT NULL DEFAULT 0,
+    BudgetPriority ENUM('LOW', 'MEDIUM', 'HIGH') NOT NULL DEFAULT 'MEDIUM',
+    Notes VARCHAR(255) NULL,
     CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT chk_budget_year
         CHECK (BudgetYear >= 2000),
@@ -207,7 +329,7 @@ CREATE TABLE BudgetPlans (
         ON UPDATE CASCADE
 );
 
--- 12. SAVING GOAL CATEGORIES
+-- 16. SAVING GOAL CATEGORIES
 CREATE TABLE SavingGoalCategories (
     GoalCategoryID INT AUTO_INCREMENT PRIMARY KEY,
     CategoryKey VARCHAR(50) NOT NULL UNIQUE,
@@ -220,7 +342,7 @@ CREATE TABLE SavingGoalCategories (
     CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- 13. SAVING GOALS
+-- 17. SAVING GOALS
 CREATE TABLE SavingGoals (
     GoalID INT AUTO_INCREMENT PRIMARY KEY,
     UserID INT NOT NULL,
@@ -271,7 +393,7 @@ CREATE TABLE SavingGoals (
     ON UPDATE CASCADE
 );
 
--- 14. GOAL CONTRIBUTIONS
+-- 18. GOAL CONTRIBUTIONS
 CREATE TABLE IF NOT EXISTS GoalContributions (
     ContributionID INT AUTO_INCREMENT PRIMARY KEY,
     GoalID INT NOT NULL,
@@ -306,7 +428,7 @@ CREATE TABLE IF NOT EXISTS GoalContributions (
         CHECK (Amount > 0)
 );
 
--- 15. INDEXES 
+-- 19. INDEXES 
 CREATE INDEX idx_savinggoals_user_status
     ON SavingGoals(UserID, Status);
 
@@ -344,6 +466,14 @@ CREATE INDEX idx_income_date ON Income(IncomeDate);
 CREATE INDEX idx_expenses_user_date ON Expenses(UserID, ExpenseDate);
 CREATE INDEX idx_expenses_category_date ON Expenses(CategoryID, ExpenseDate);
 CREATE INDEX idx_expenses_date ON Expenses(ExpenseDate);
+CREATE INDEX idx_importbatches_user_created ON TransactionImportBatches(UserID, CreatedAt);
+CREATE INDEX idx_importbatches_status ON TransactionImportBatches(Status);
+CREATE INDEX idx_importrows_batch_row ON TransactionImportRows(BatchID, RowNumber);
+CREATE INDEX idx_importrows_duplicate_hash ON TransactionImportRows(DuplicateHash);
+CREATE INDEX idx_importrows_status ON TransactionImportRows(RowStatus);
+CREATE INDEX idx_txn_rules_user_active ON TransactionCategoryRules(UserID, IsActive, Priority);
 
 CREATE INDEX idx_budgetplans_user_period ON BudgetPlans(UserID, BudgetYear, BudgetMonth);
 CREATE INDEX idx_budgetplans_category_period ON BudgetPlans(CategoryID, BudgetYear, BudgetMonth);
+CREATE INDEX idx_budgetplans_softlock_priority ON BudgetPlans(UserID, BudgetYear, BudgetMonth, IsSoftLocked, BudgetPriority);
+CREATE INDEX idx_budgetsettings_user_period ON BudgetSettings(UserID, BudgetYear, BudgetMonth);

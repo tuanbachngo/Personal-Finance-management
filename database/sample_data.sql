@@ -673,3 +673,61 @@ SELECT
     'Initial goal contribution'
 FROM SavingGoals g
 WHERE g.GoalName IN ('Emergency Fund', 'Buy a Laptop');
+
+-- SMART BUDGET SETTINGS
+INSERT INTO BudgetSettings (
+    UserID,
+    BudgetYear,
+    BudgetMonth,
+    ExpectedIncome,
+    FixedExpenseEstimate,
+    FixedExpenseItemsJson,
+    GoalContributionTarget,
+    EmergencyBuffer
+)
+VALUES
+    (1, 2026, 4, 23500000.00, 4500000.00, JSON_ARRAY(
+        JSON_OBJECT('name', 'Rent', 'amount', 3500000),
+        JSON_OBJECT('name', 'Internet', 'amount', 1000000)
+    ), 2500000.00, 1500000.00),
+    (10, 2026, 4, 16800000.00, 5000000.00, JSON_ARRAY(
+        JSON_OBJECT('name', 'Rent', 'amount', 4000000),
+        JSON_OBJECT('name', 'Phone and internet', 'amount', 1000000)
+    ), 2000000.00, 1000000.00);
+
+-- TRANSACTION CATEGORY RULES
+INSERT INTO TransactionCategoryRules (
+    UserID,
+    Keyword,
+    CategoryID,
+    Priority,
+    IsActive
+)
+VALUES
+    (NULL, 'highlands', 1, 10, 1),
+    (NULL, 'coffee', 1, 10, 1),
+    (NULL, 'grab', 2, 10, 1),
+    (NULL, 'taxi', 2, 10, 1),
+    (NULL, 'shopee', 5, 10, 1),
+    (NULL, 'lazada', 5, 10, 1),
+    (NULL, 'internet', 7, 10, 1),
+    (NULL, 'electric', 7, 10, 1),
+    (NULL, 'hospital', 6, 10, 1),
+    (NULL, 'pharmacy', 6, 10, 1);
+
+UPDATE BudgetPlans
+SET
+    IsSoftLocked = 1,
+    BudgetPriority = 'LOW',
+    Notes = 'Soft locked to reduce unnecessary spending.'
+WHERE CategoryID IN (4, 5)
+  AND BudgetYear = 2026
+  AND BudgetMonth = 4;
+
+UPDATE BudgetPlans
+SET
+    BudgetPriority = 'HIGH',
+    Notes = 'Essential monthly spending.'
+WHERE CategoryID IN (1, 8, 7)
+  AND BudgetYear = 2026
+  AND BudgetMonth = 4;

@@ -140,6 +140,7 @@ class IncomeCreateRequest(BaseModel):
     user_id: int
     account_id: int
     amount: float = Field(gt=0)
+    transaction_date: date | None = None
     description: str = ""
 
 
@@ -147,6 +148,7 @@ class IncomeUpdateRequest(BaseModel):
     user_id: int
     account_id: int
     amount: float = Field(gt=0)
+    transaction_date: date | None = None
     description: str = ""
 
 
@@ -155,6 +157,7 @@ class ExpenseCreateRequest(BaseModel):
     account_id: int
     category_id: int
     amount: float = Field(gt=0)
+    transaction_date: date | None = None
     description: str = ""
 
 
@@ -163,7 +166,68 @@ class ExpenseUpdateRequest(BaseModel):
     account_id: int
     category_id: int
     amount: float = Field(gt=0)
+    transaction_date: date | None = None
     description: str = ""
+
+
+class ImportPreviewRow(BaseModel):
+    row_id: int
+    row_number: int
+    raw_date: str | None = None
+    raw_description: str | None = None
+    raw_amount: str | None = None
+    raw_type: str | None = None
+    parsed_date: date | None = None
+    parsed_amount: float | None = None
+    parsed_type: str | None = None
+    suggested_category_id: int | None = None
+    suggested_category_name: str | None = None
+    is_duplicate: int
+    action: str
+    error_message: str | None = None
+
+
+class ImportPreviewResponse(BaseModel):
+    batch_id: int
+    status: str
+    total_rows: int
+    rows: List[ImportPreviewRow]
+
+
+class ImportConfirmRowUpdate(BaseModel):
+    row_id: int
+    action: str = "IMPORT"
+    final_category_id: int | None = None
+
+
+class ImportConfirmRequest(BaseModel):
+    batch_id: int
+    user_id: int | None = None
+    rows: List[ImportConfirmRowUpdate] = Field(default_factory=list)
+
+
+class ImportConfirmResponse(BaseModel):
+    message: str
+    batch_id: int
+    imported_rows: int
+    skipped_rows: int
+    failed_rows: int
+
+
+class ImportHistoryRecord(BaseModel):
+    batch_id: int
+    user_id: int
+    account_id: int
+    bank_name: str | None = None
+    file_name: str | None = None
+    file_type: str | None = None
+    status: str
+    total_rows: int
+    imported_rows: int
+    skipped_rows: int
+    failed_rows: int
+    created_at: datetime
+    confirmed_at: datetime | None = None
 
 
 class FinancialSummary(BaseModel):
@@ -210,6 +274,9 @@ class BudgetPlanRecord(BaseModel):
     BudgetMonth: int
     PlannedAmount: float
     WarningPercent: float
+    IsSoftLocked: int = 0
+    BudgetPriority: str = "MEDIUM"
+    Notes: str | None = None
     CreatedAt: datetime | None = None
 
 
@@ -235,6 +302,9 @@ class BudgetCreateRequest(BaseModel):
     budget_month: int
     planned_amount: float = Field(gt=0)
     warning_percent: float = Field(gt=0, le=100)
+    is_soft_locked: int = Field(default=0, ge=0, le=1)
+    budget_priority: str = Field(default="MEDIUM", max_length=10)
+    notes: str | None = Field(default=None, max_length=255)
 
 
 class BudgetUpdateRequest(BaseModel):
@@ -244,6 +314,101 @@ class BudgetUpdateRequest(BaseModel):
     budget_month: int
     planned_amount: float = Field(gt=0)
     warning_percent: float = Field(gt=0, le=100)
+    is_soft_locked: int = Field(default=0, ge=0, le=1)
+    budget_priority: str = Field(default="MEDIUM", max_length=10)
+    notes: str | None = Field(default=None, max_length=255)
+
+
+class FixedExpenseItem(BaseModel):
+    item_name: str = Field(min_length=1, max_length=100)
+    amount: float = Field(ge=0)
+
+
+class BudgetSettingsRequest(BaseModel):
+    user_id: int
+    budget_year: int
+    budget_month: int
+    expected_income: float = Field(ge=0)
+    fixed_expense_estimate: float = Field(ge=0)
+    goal_contribution_target: float = Field(ge=0)
+    emergency_buffer: float = Field(ge=0)
+    fixed_expense_items: List[FixedExpenseItem] = Field(default_factory=list)
+
+
+class BudgetCategoryGuardrailRecord(BaseModel):
+    budget_id: int
+    category_id: int
+    category_name: str
+    planned_amount: float
+    spent_amount: float
+    remaining_budget: float
+    warning_percent: float
+    alert_level: str
+    safe_daily_spend: float
+    safe_weekly_spend: float
+    days_left_in_month: int
+    spending_pace_status: str
+    usage_percent: float
+    is_soft_locked: int
+    budget_priority: str
+    notes: str | None = None
+    historical_average_spent: float = 0.0
+
+
+class BudgetOverviewResponse(BaseModel):
+    user_id: int
+    budget_year: int
+    budget_month: int
+    expected_income: float
+    fixed_expense_estimate: float
+    fixed_expense_items: List[FixedExpenseItem] = Field(default_factory=list)
+    goal_contribution_target: float
+    emergency_buffer: float
+    available_to_budget: float
+    total_planned_budget: float
+    remaining_to_allocate: float
+    total_spent: float
+    remaining_budget: float
+    budget_health: str
+    warnings: List[str] = Field(default_factory=list)
+    categories: List[BudgetCategoryGuardrailRecord] = Field(default_factory=list)
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class BudgetSettingsResponse(BaseModel):
+    user_id: int
+    budget_year: int
+    budget_month: int
+    expected_income: float
+    fixed_expense_estimate: float
+    fixed_expense_items: List[FixedExpenseItem] = Field(default_factory=list)
+    goal_contribution_target: float
+    emergency_buffer: float
+    available_to_budget: float
+    total_planned_budget: float
+    remaining_to_allocate: float
+    budget_health: str
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class CanISpendRequest(BaseModel):
+    user_id: int
+    category_id: int
+    amount: float = Field(gt=0)
+    budget_year: int
+    budget_month: int
+
+
+class CanISpendResponse(BaseModel):
+    decision: str
+    message: str
+    remaining_before: float
+    remaining_after: float
+    safe_daily_spend: float
+    usage_percent_after: float | None = None
+    requires_confirmation: bool
 
 
 class SpendingAlert(BaseModel):

@@ -60,13 +60,22 @@ GROUP BY md.YearMonth;
 DROP VIEW IF EXISTS vw_category_wise_spending;
 CREATE VIEW vw_category_wise_spending AS
 SELECT
+    u.UserID,
+    u.UserName,
     c.CategoryID,
     c.CategoryName,
     COALESCE(SUM(e.Amount), 0) AS TotalSpent,
     COUNT(e.ExpenseID) AS TotalTransactions
-FROM ExpenseCategories c
-LEFT JOIN Expenses e ON c.CategoryID = e.CategoryID
-GROUP BY c.CategoryID, c.CategoryName;
+FROM Users u
+CROSS JOIN ExpenseCategories c
+LEFT JOIN Expenses e
+    ON u.UserID = e.UserID
+   AND c.CategoryID = e.CategoryID
+GROUP BY
+    u.UserID,
+    u.UserName,
+    c.CategoryID,
+    c.CategoryName;
 
 -- View 5: budget vs actual spending by month/category
 -- Purpose: compare planned budget and actual expense for each user/category/month.
@@ -253,3 +262,58 @@ LEFT JOIN BankAccounts ba
    AND g.UserID = ba.UserID
 LEFT JOIN Banks b
     ON ba.BankID = b.BankID;
+
+-- View 9: smart budget overview
+DROP VIEW IF EXISTS vw_smart_budget_overview;
+CREATE VIEW vw_smart_budget_overview AS
+SELECT
+    bs.UserID,
+    u.UserName,
+    bs.BudgetYear,
+    bs.BudgetMonth,
+    bs.ExpectedIncome,
+    bs.FixedExpenseEstimate,
+    bs.FixedExpenseItemsJson,
+    bs.GoalContributionTarget,
+    bs.EmergencyBuffer,
+    bs.ExpectedIncome
+        - bs.FixedExpenseEstimate
+        - bs.GoalContributionTarget
+        - bs.EmergencyBuffer AS AvailableToBudget,
+    COALESCE(SUM(bp.PlannedAmount), 0) AS TotalPlannedBudget,
+    (
+        bs.ExpectedIncome
+        - bs.FixedExpenseEstimate
+        - bs.GoalContributionTarget
+        - bs.EmergencyBuffer
+        - COALESCE(SUM(bp.PlannedAmount), 0)
+    ) AS RemainingToAllocate,
+    CASE
+        WHEN COALESCE(SUM(bp.PlannedAmount), 0) >
+             (bs.ExpectedIncome - bs.FixedExpenseEstimate - bs.GoalContributionTarget - bs.EmergencyBuffer) * 1.2
+            THEN 'OVERPLANNED'
+        WHEN COALESCE(SUM(bp.PlannedAmount), 0) >
+             (bs.ExpectedIncome - bs.FixedExpenseEstimate - bs.GoalContributionTarget - bs.EmergencyBuffer) * 1.1
+            THEN 'RISKY'
+        WHEN COALESCE(SUM(bp.PlannedAmount), 0) >
+             (bs.ExpectedIncome - bs.FixedExpenseEstimate - bs.GoalContributionTarget - bs.EmergencyBuffer)
+            THEN 'CAUTION'
+        ELSE 'HEALTHY'
+    END AS BudgetHealth
+FROM BudgetSettings bs
+JOIN Users u
+    ON bs.UserID = u.UserID
+LEFT JOIN BudgetPlans bp
+    ON bs.UserID = bp.UserID
+   AND bs.BudgetYear = bp.BudgetYear
+   AND bs.BudgetMonth = bp.BudgetMonth
+GROUP BY
+    bs.UserID,
+    u.UserName,
+    bs.BudgetYear,
+    bs.BudgetMonth,
+    bs.ExpectedIncome,
+    bs.FixedExpenseEstimate,
+    bs.FixedExpenseItemsJson,
+    bs.GoalContributionTarget,
+    bs.EmergencyBuffer;

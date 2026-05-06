@@ -19,6 +19,18 @@ class ReportRepository:
         finally:
             cursor.close()
 
+    def _fetch_one(self, query: str, params=()) -> Optional[Dict[str, Any]]:
+        rows = self._fetch_all(query, params)
+        return rows[0] if rows else None
+
+    def _execute(self, query: str, params=()) -> None:
+        cursor = self.connection.cursor()
+        try:
+            cursor.execute(query, params)
+            self.connection.commit()
+        finally:
+            cursor.close()
+
     def get_total_income_by_user(self) -> List[Dict[str, Any]]:
         return self._fetch_all(
             """
@@ -216,23 +228,37 @@ class ReportRepository:
         budget_month: int,
         planned_amount: float,
         warning_percent: float,
+        is_soft_locked: int = 0,
+        budget_priority: str = "MEDIUM",
+        notes: Optional[str] = None,
     ) -> None:
-        cursor = self.connection.cursor()
-        try:
-            cursor.callproc(
-                "sp_add_budget_plan",
-                [
-                    user_id,
-                    category_id,
-                    budget_year,
-                    budget_month,
-                    planned_amount,
-                    warning_percent,
-                ],
+        self._execute(
+            """
+            INSERT INTO BudgetPlans (
+                UserID,
+                CategoryID,
+                BudgetYear,
+                BudgetMonth,
+                PlannedAmount,
+                WarningPercent,
+                IsSoftLocked,
+                BudgetPriority,
+                Notes
             )
-            self.connection.commit()
-        finally:
-            cursor.close()
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                user_id,
+                category_id,
+                budget_year,
+                budget_month,
+                planned_amount,
+                warning_percent,
+                is_soft_locked,
+                budget_priority,
+                notes,
+            ),
+        )
 
     def update_budget_plan(
         self,
@@ -243,49 +269,59 @@ class ReportRepository:
         budget_month: int,
         planned_amount: float,
         warning_percent: float,
+        is_soft_locked: int = 0,
+        budget_priority: str = "MEDIUM",
+        notes: Optional[str] = None,
     ) -> None:
-        cursor = self.connection.cursor()
-        try:
-            cursor.callproc(
-                "sp_update_budget_plan",
-                [
-                    budget_id,
-                    user_id,
-                    category_id,
-                    budget_year,
-                    budget_month,
-                    planned_amount,
-                    warning_percent,
-                ],
-            )
-            self.connection.commit()
-        finally:
-            cursor.close()
+        self._execute(
+            """
+            UPDATE BudgetPlans
+            SET
+                UserID = %s,
+                CategoryID = %s,
+                BudgetYear = %s,
+                BudgetMonth = %s,
+                PlannedAmount = %s,
+                WarningPercent = %s,
+                IsSoftLocked = %s,
+                BudgetPriority = %s,
+                Notes = %s
+            WHERE BudgetID = %s
+            """,
+            (
+                user_id,
+                category_id,
+                budget_year,
+                budget_month,
+                planned_amount,
+                warning_percent,
+                is_soft_locked,
+                budget_priority,
+                notes,
+                budget_id,
+            ),
+        )
 
     def delete_budget_plan(self, budget_id: int) -> None:
-        query = """
+        self._execute(
+            """
             DELETE FROM BudgetPlans
             WHERE BudgetID = %s
-        """
-        cursor = self.connection.cursor()
-        try:
-            cursor.execute(query, (budget_id,))
-            self.connection.commit()
-        finally:
-            cursor.close()
+            """,
+            (budget_id,),
+        )
 
     def get_budget_plan_by_id(self, budget_id: int) -> Optional[Dict[str, Any]]:
-        rows = self._fetch_all(
+        return self._fetch_one(
             """
             SELECT
                 BudgetID, UserID, CategoryID, BudgetYear, BudgetMonth,
-                PlannedAmount, WarningPercent, CreatedAt
+                PlannedAmount, WarningPercent, IsSoftLocked, BudgetPriority, Notes, CreatedAt
             FROM BudgetPlans
             WHERE BudgetID = %s
             """,
             (budget_id,),
         )
-        return rows[0] if rows else None
 
     def get_budget_plans_by_user(
         self,
@@ -305,6 +341,9 @@ class ReportRepository:
                 b.BudgetMonth,
                 b.PlannedAmount,
                 b.WarningPercent,
+                b.IsSoftLocked,
+                b.BudgetPriority,
+                b.Notes,
                 b.CreatedAt
             FROM BudgetPlans b
             JOIN Users u ON b.UserID = u.UserID
@@ -316,6 +355,110 @@ class ReportRepository:
             """,
             (user_id, budget_year, budget_year, budget_month, budget_month),
         )
+
+    def get_budget_settings(
+        self,
+        user_id: int,
+        budget_year: int,
+        budget_month: int,
+    ) -> Optional[Dict[str, Any]]:
+        return self._fetch_one(
+            """
+            SELECT
+                BudgetSettingID,
+                UserID,
+                BudgetYear,
+                BudgetMonth,
+                ExpectedIncome,
+                FixedExpenseEstimate,
+                FixedExpenseItemsJson,
+                GoalContributionTarget,
+                EmergencyBuffer,
+                CreatedAt,
+                UpdatedAt
+            FROM BudgetSettings
+            WHERE UserID = %s
+              AND (
+                    BudgetYear < %s
+                    OR (BudgetYear = %s AND BudgetMonth <= %s)
+                  )
+            ORDER BY BudgetYear DESC, BudgetMonth DESC
+            LIMIT 1
+            """,
+            (user_id, budget_year, budget_year, budget_month),
+        )
+
+    def upsert_budget_settings(
+        self,
+        user_id: int,
+        budget_year: int,
+        budget_month: int,
+        expected_income: float,
+        fixed_expense_estimate: float,
+        fixed_expense_items_json: Optional[str],
+        goal_contribution_target: float,
+        emergency_buffer: float,
+    ) -> None:
+        self._execute(
+            """
+            INSERT INTO BudgetSettings (
+                UserID,
+                BudgetYear,
+                BudgetMonth,
+                ExpectedIncome,
+                FixedExpenseEstimate,
+                FixedExpenseItemsJson,
+                GoalContributionTarget,
+                EmergencyBuffer
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                ExpectedIncome = VALUES(ExpectedIncome),
+                FixedExpenseEstimate = VALUES(FixedExpenseEstimate),
+                FixedExpenseItemsJson = VALUES(FixedExpenseItemsJson),
+                GoalContributionTarget = VALUES(GoalContributionTarget),
+                EmergencyBuffer = VALUES(EmergencyBuffer)
+            """,
+            (
+                user_id,
+                budget_year,
+                budget_month,
+                expected_income,
+                fixed_expense_estimate,
+                fixed_expense_items_json,
+                goal_contribution_target,
+                emergency_buffer,
+            ),
+        )
+
+    def get_average_monthly_category_spending(
+        self,
+        user_id: int,
+        category_id: int,
+        cutoff_date: Any,
+        lookback_months: int = 3,
+    ) -> float:
+        row = self._fetch_one(
+            """
+            SELECT AVG(month_total) AS AverageSpent
+            FROM (
+                SELECT
+                    DATE_FORMAT(ExpenseDate, '%Y-%m') AS YearMonth,
+                    SUM(Amount) AS month_total
+                FROM Expenses
+                WHERE UserID = %s
+                  AND CategoryID = %s
+                  AND ExpenseDate < %s
+                GROUP BY DATE_FORMAT(ExpenseDate, '%Y-%m')
+                ORDER BY YearMonth DESC
+                LIMIT %s
+            ) monthly_totals
+            """,
+            (user_id, category_id, cutoff_date, lookback_months),
+        )
+        if not row or row.get("AverageSpent") is None:
+            return 0.0
+        return float(row["AverageSpent"])
 
     def find_budget_plan_duplicate(
         self,

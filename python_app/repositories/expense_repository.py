@@ -2,6 +2,7 @@
 Expense repository for Personal_Finance.
 """
 
+from datetime import date
 from typing import Any, Dict, List, Optional
 
 
@@ -56,13 +57,25 @@ class ExpenseRepository:
         category_id: int,
         amount: float,
         description: str,
+        transaction_date: Optional[date] = None,
     ) -> None:
         cursor = self.connection.cursor()
         try:
-            cursor.callproc(
-                "sp_add_expense",
-                [user_id, account_id, category_id, amount, description],
-            )
+            if transaction_date is None:
+                cursor.callproc(
+                    "sp_add_expense",
+                    [user_id, account_id, category_id, amount, description],
+                )
+            else:
+                cursor.execute(
+                    """
+                    INSERT INTO Expenses (
+                        UserID, AccountID, CategoryID, Amount, ExpenseDate, Description
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    """,
+                    (user_id, account_id, category_id, amount, transaction_date, description),
+                )
             self.connection.commit()
         finally:
             cursor.close()
@@ -74,21 +87,45 @@ class ExpenseRepository:
         account_id: int,
         category_id: int,
         amount: float,
-        description: str,
+        transaction_date: Optional[date] = None,
+        description: str = "",
     ) -> None:
         cursor = self.connection.cursor()
         try:
-            cursor.callproc(
-                "sp_update_expense",
-                [
-                    expense_id,
-                    user_id,
-                    account_id,
-                    category_id,
-                    amount,
-                    description,
-                ],
-            )
+            if transaction_date is None:
+                cursor.callproc(
+                    "sp_update_expense",
+                    [
+                        expense_id,
+                        user_id,
+                        account_id,
+                        category_id,
+                        amount,
+                        description,
+                    ],
+                )
+            else:
+                cursor.execute(
+                    """
+                    UPDATE Expenses
+                    SET UserID = %s,
+                        AccountID = %s,
+                        CategoryID = %s,
+                        Amount = %s,
+                        ExpenseDate = %s,
+                        Description = %s
+                    WHERE ExpenseID = %s
+                    """,
+                    (
+                        user_id,
+                        account_id,
+                        category_id,
+                        amount,
+                        transaction_date,
+                        description,
+                        expense_id,
+                    ),
+                )
             self.connection.commit()
         finally:
             cursor.close()

@@ -11,6 +11,7 @@ import {
   extractApiErrorMessage,
   getMetaAccounts
 } from "@/lib/api-client";
+import { formatDate } from "@/lib/format";
 import {
   useCreateGoal,
   useCreateGoalContribution,
@@ -474,7 +475,7 @@ export default function GoalsPage() {
                             {goal.GoalAlertLevel}
                           </span>
                           <span className="text-xs text-muted">
-                            {goal.TargetDate ? String(goal.TargetDate).slice(0, 10) : "No target date"}
+                            {goal.TargetDate ? formatDate(String(goal.TargetDate)) : "No target date"}
                           </span>
                         </div>
 
