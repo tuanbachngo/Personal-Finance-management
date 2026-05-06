@@ -66,6 +66,119 @@ a {
   animation-delay: -6s;
 }
 
+@keyframes vault-drift {
+  0% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  50% {
+    transform: translate3d(14px, -12px, 0) rotate(1.2deg);
+  }
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+}
+
+@keyframes vault-particle {
+  0% {
+    transform: translate3d(0, 0, 0);
+    opacity: 0.15;
+  }
+  50% {
+    transform: translate3d(10px, -10px, 0);
+    opacity: 0.45;
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
+    opacity: 0.15;
+  }
+}
+
+@keyframes vault-stream {
+  0% {
+    transform: translateX(-18%);
+  }
+  50% {
+    transform: translateX(18%);
+  }
+  100% {
+    transform: translateX(-18%);
+  }
+}
+
+.login-bg-stream {
+  position: absolute;
+  width: 340px;
+  height: 2px;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, rgba(255, 90, 54, 0), rgba(255, 90, 54, 0.55), rgba(255, 90, 54, 0));
+  opacity: 0.38;
+  pointer-events: none;
+  animation: vault-stream 11s ease-in-out infinite;
+}
+
+.login-bg-stream-second {
+  animation-duration: 13s;
+  animation-delay: -4s;
+}
+
+.login-bg-money-icon {
+  position: absolute;
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 90, 54, 0.22);
+  background: rgba(255, 255, 255, 0.78);
+  border-radius: 16px;
+  box-shadow: 0 10px 22px rgba(17, 24, 39, 0.11);
+  backdrop-filter: blur(10px);
+  opacity: 0.82;
+  pointer-events: none;
+  animation: vault-drift 14s ease-in-out infinite;
+}
+
+.login-bg-money-icon-second {
+  animation-duration: 17s;
+  animation-delay: -6s;
+}
+
+.login-bg-money-icon-third {
+  animation-duration: 15s;
+  animation-delay: -2s;
+}
+
+.login-bg-particle {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: rgba(255, 90, 54, 0.5);
+  pointer-events: none;
+  animation: vault-particle 9s ease-in-out infinite;
+}
+
+.login-bg-particle-second {
+  background: rgba(16, 185, 129, 0.48);
+  animation-duration: 12s;
+  animation-delay: -3s;
+}
+
+.login-bg-particle-third {
+  background: rgba(245, 158, 11, 0.42);
+  animation-duration: 10s;
+  animation-delay: -5s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-bg-orb,
+  .login-bg-stream,
+  .login-bg-money-icon,
+  .login-bg-particle {
+    animation: none !important;
+  }
+}
+
 .focus-ring {
   @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-bg;
 }

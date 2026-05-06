@@ -768,6 +768,89 @@ docker compose logs -f app
 
 - `cmd /c npx tsc --noEmit` (frontend) -> pass
 
+## Update 2026-05-06 (Expanded money icon set on login)
+
+### What changed
+
+- Increased floating finance icons on login to 12 items (scattered layout).
+- Added more diverse icon types:
+  - `CircleDollarSign`, `PiggyBank`, `WalletCards`, `Coins`, `Banknote`,
+  - `Landmark`, `ReceiptText`, `CreditCard`, `Wallet`, `HandCoins`,
+  - `BadgeDollarSign`, `TrendingUp`
+- Each icon now has its own position, color, size, animation delay, and duration via a config array.
+
+### Files edited
+
+- `frontend/src/app/(auth)/login/page.tsx`
+
+### Commands run
+
+- `cmd /c npx tsc --noEmit` (frontend) -> pass
+
+## Update 2026-05-06 (Replace placeholder object with money icons)
+
+### What changed
+
+- Removed unclear placeholder decorative card from login background.
+- Replaced with finance-related animated icons:
+  - `CircleDollarSign`
+  - `PiggyBank`
+  - `WalletCards`
+- Updated decorative CSS class names from glass-card to money-icon and retained subtle drift animation.
+
+### Files edited
+
+- `frontend/src/app/(auth)/login/page.tsx`
+- `frontend/src/app/globals.css`
+
+### Commands run
+
+- `cmd /c npx tsc --noEmit` (frontend) -> pass
+
+## Update 2026-05-06 (Login animation visibility fix)
+
+### What changed
+
+- Fixed unclear/broken-looking decorative animation rendering on login page.
+- Root cause addressed:
+  - decoration layer was constrained in a narrow centered container (`max-w-xl`) and elements overlapped too close to the card.
+- Implemented fixes:
+  - made login scene full-width and separated decorative layer via `absolute inset-0`.
+  - kept form card inside a centered `max-w-xl` content wrapper.
+  - repositioned stream/particle/glass elements farther from the form.
+  - reduced noise and increased visual clarity for decorative cards (contrast/opacity/border/shadow tuning).
+  - hid glass cards on small screens to prevent clutter (`hidden md:block`).
+
+### Files edited
+
+- `frontend/src/app/(auth)/login/page.tsx`
+- `frontend/src/app/globals.css`
+
+### Commands run
+
+- `cmd /c npx tsc --noEmit` (frontend) -> pass
+
+## Update 2026-05-06 (Login animated objects)
+
+### What changed
+
+- Added richer animated background objects around login:
+  - gradient stream lines
+  - floating glass mini-cards
+  - low-density particle dots
+  - existing orb motion kept
+- Added reduced-motion guard:
+  - disables these animations when `prefers-reduced-motion: reduce`.
+
+### Files edited
+
+- `frontend/src/app/globals.css`
+- `frontend/src/app/(auth)/login/page.tsx`
+
+### Commands run
+
+- `cmd /c npx tsc --noEmit` (frontend) -> pass
+
 ## Update 2026-05-06 (Sidebar header alignment)
 
 ### What changed
