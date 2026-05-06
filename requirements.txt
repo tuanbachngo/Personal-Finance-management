@@ -1,5 +1,2 @@
-streamlit==1.44.1
 mysql-connector-python==9.2.0
 argon2-cffi==23.1.0
-pandas==2.2.3
-altair==5.5.0

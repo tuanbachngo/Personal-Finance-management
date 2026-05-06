@@ -787,6 +787,57 @@ docker compose logs -f app
 
 - `cmd /c npx tsc --noEmit` (frontend) -> pass
 
+## Update 2026-05-06 (Streamlit removal completed)
+
+### What changed
+
+- Removed Streamlit runtime and UI layer from project.
+- Deleted Streamlit-specific files/folders:
+  - `.streamlit/`
+  - `python_app/streamlit_app.py`
+  - `python_app/ui/**`
+  - Streamlit UI font assets under `python_app/ui/assets/fonts/**`
+- Removed Streamlit package dependency from root `requirements.txt`.
+- Removed Streamlit secrets fallback from runtime config/bootstrap code:
+  - `python_app/db_config.py`
+  - `python_app/services/finance_service.py`
+  - `ops/bootstrap_auth.py`
+- Updated root Docker image to be a generic tools image (no Streamlit CMD).
+- Removed `app` service from `docker-compose.yml`.
+- Updated `README.md` to reflect current architecture:
+  - FastAPI + Next.js + shared Python service/repository layer
+  - No Streamlit references
+  - Updated run commands and routes
+
+### Files edited
+
+- `docker-compose.yml`
+- `Dockerfile`
+- `requirements.txt`
+- `README.md`
+- `ops/bootstrap_auth.py`
+- `python_app/db_config.py`
+- `python_app/db_connection.py`
+- `python_app/services/finance_service.py`
+- `docs/HANDOFF.md`
+
+### Files removed
+
+- `.streamlit/config.toml`
+- `python_app/streamlit_app.py`
+- `python_app/ui/**` (entire directory tree)
+
+### Commands run
+
+- `docker compose config` -> pass
+- `docker compose up -d --build backend frontend` -> pass
+- `docker compose logs --tail=40 backend` -> backend startup OK
+
+### Current status
+
+- Runtime stack now uses `db + backend + frontend` only.
+- Backend starts successfully without Streamlit dependency.
+
 ## Update 2026-05-06 (Replace placeholder object with money icons)
 
 ### What changed
@@ -806,6 +857,22 @@ docker compose logs -f app
 ### Commands run
 
 - `cmd /c npx tsc --noEmit` (frontend) -> pass
+
+## Update 2026-05-06 (README refresh for submission)
+
+### What changed
+
+- Rewrote `README.md` to match current project state.
+- Removed references to internal workflow files (`HANDOFF`, `TODO`) from README.
+- Updated sections:
+  - architecture and module scope
+  - real frontend routes and backend route groups
+  - current Docker/local setup commands
+  - database asset and migration list
+
+### Files edited
+
+- `README.md`
 
 ## Update 2026-05-06 (Login animation visibility fix)
 
@@ -981,3 +1048,19 @@ docker compose logs -f app
 ### Commands run
 
 - `cmd /c npx tsc --noEmit` (frontend) -> pass
+
+## Update 2026-05-06 (Remove Goals refresh button)
+
+### What changed
+
+- Removed the `Refresh` button from the Goals page top action row.
+- Kept `+ Add goal` action unchanged.
+- No data/API behavior changed.
+
+### Files edited
+
+- `frontend/src/app/(app)/goals/page.tsx`
+
+### Commands run
+
+- `docker compose exec frontend npx tsc --noEmit` -> pass

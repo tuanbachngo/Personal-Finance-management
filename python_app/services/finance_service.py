@@ -106,15 +106,6 @@ class FinanceService:
     def _read_bool_runtime_config(name: str, default: bool) -> bool:
         raw = os.getenv(name)
         if raw is None:
-            try:
-                import streamlit as st
-
-                secret_value = st.secrets.get(name)
-                if secret_value is not None:
-                    raw = str(secret_value)
-            except Exception:
-                raw = None
-        if raw is None:
             return default
         normalized = raw.strip().lower()
         if normalized in {"1", "true", "yes", "on"}:

@@ -26,30 +26,12 @@ from python_app.db_connection import get_connection
 from python_app.services.finance_service import FinanceService
 
 
-def _read_streamlit_secret(name: str) -> str:
-    try:
-        import streamlit as st
-    except Exception:
-        return ""
-
-    try:
-        value = st.secrets.get(name)
-    except Exception:
-        return ""
-
-    if value is None:
-        return ""
-    return str(value).strip()
-
-
 def _required_env(name: str) -> str:
     value = os.getenv(name, "").strip()
     if not value:
-        value = _read_streamlit_secret(name)
-    if not value:
         raise ValueError(
             f"Missing required environment variable {name}. "
-            "Please set it via environment variables or .streamlit/secrets.toml before running bootstrap."
+            "Please set it via environment variables before running bootstrap."
         )
     return value
 
@@ -59,17 +41,11 @@ def _optional_env(name: str, default: str = "") -> str:
     if env_value:
         return env_value
 
-    secret_value = _read_streamlit_secret(name)
-    if secret_value:
-        return secret_value
-
     return default.strip()
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
     raw = os.getenv(name, "").strip()
-    if not raw:
-        raw = _read_streamlit_secret(name)
     if not raw:
         return default
     normalized = raw.strip().lower()

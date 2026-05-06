@@ -5,33 +5,11 @@ from dataclasses import dataclass
 from typing import Optional
 
 
-def _read_streamlit_secret(key: str) -> Optional[str]:
-    """Read a value from Streamlit secrets when available."""
-    try:
-        import streamlit as st
-    except Exception:
-        return None
-
-    try:
-        value = st.secrets.get(key)
-    except Exception:
-        return None
-
-    if value is None:
-        return None
-    text_value = str(value).strip()
-    return text_value or None
-
-
 def _read_config_value(key: str, default: Optional[str] = None) -> Optional[str]:
-    """Read config from env first, then Streamlit secrets, then default."""
+    """Read config from environment variables with an optional default."""
     env_value = os.getenv(key)
     if env_value is not None and env_value.strip() != "":
         return env_value.strip()
-
-    secret_value = _read_streamlit_secret(key)
-    if secret_value is not None and secret_value.strip() != "":
-        return secret_value.strip()
 
     return default
 
@@ -49,12 +27,11 @@ class DatabaseConfig:
     @staticmethod
     def from_env() -> "DatabaseConfig":
         """
-        Create config from env/secrets with safe defaults.
+        Create config from environment variables with safe defaults.
 
         Priority:
         1) Environment variables
-        2) Streamlit secrets
-        3) Non-sensitive defaults
+        2) Non-sensitive defaults
 
         Required:
         - MYSQL_PASSWORD
@@ -74,7 +51,7 @@ class DatabaseConfig:
         if password is None:
             raise ValueError(
                 "Missing required database secret MYSQL_PASSWORD. "
-                "Set it via environment variable or .streamlit/secrets.toml."
+                "Set it via environment variable (for example in .env)."
             )
 
         try:

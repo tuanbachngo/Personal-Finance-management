@@ -63,7 +63,7 @@ def ensure_connection_ready(
     Return True when a connection is alive and ready for queries.
 
     For cloud-hosted MySQL, ping(reconnect=True) helps recover stale sockets
-    between Streamlit reruns without changing normal local behavior.
+    between web requests without changing normal local behavior.
     """
     if connection is None:
         return False

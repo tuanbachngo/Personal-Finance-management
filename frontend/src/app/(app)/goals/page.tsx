@@ -379,13 +379,6 @@ export default function GoalsPage() {
             <div className="flex flex-col gap-2 sm:flex-row">
               <button
                 type="button"
-                className="focus-ring rounded-xl border border-border bg-bg px-4 py-2 text-sm font-semibold text-text transition-colors hover:bg-surface-hover"
-                onClick={() => goalsQuery.refetch()}
-              >
-                Refresh
-              </button>
-              <button
-                type="button"
                 className="focus-ring rounded-xl bg-primary px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-primary/90"
                 onClick={openCreateForm}
               >
