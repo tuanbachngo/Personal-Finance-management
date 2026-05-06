@@ -705,3 +705,196 @@ docker compose logs -f app
 - Recurring expected-income/fixed-expense behavior is implemented at backend + frontend.
 - Budgets page supports itemized fixed expenses and improved compact layout.
 - Type-check and backend compile checks pass.
+
+## Update 2026-05-06 (Reports month detail + sidebar toggle + Vi Vu branding)
+
+### What changed
+
+- Added month-specific detail views in Reports for both Spending and Income tabs.
+  - New month selector appears on Spending/Income tabs.
+  - Spending now shows per-month category breakdown, summary, and spending transactions.
+  - Income now shows per-month source breakdown (bank/account), summary, and income transactions.
+  - Implemented using existing transaction/account APIs (no backend/schema change).
+- Added sidebar visibility toggle at app header level.
+  - New button in topbar: `Hide Sidebar` / `Show Sidebar`.
+  - State persisted in browser `localStorage` key `vv_sidebar_hidden`.
+- Rebranded frontend to `Vi Vu`.
+  - App metadata title/description updated.
+  - Sidebar brand text updated to `Vi Vu`.
+  - Login hero text updated from `Personal Finance Login` to `Sign In`, with `Vi Vu` label above.
+- Added animated background accents for login screen (CSS keyframes + moving gradient orbs).
+
+### Files edited
+
+- `frontend/src/app/(app)/reports/page.tsx`
+- `frontend/src/components/layout/app-shell.tsx`
+- `frontend/src/components/layout/topbar.tsx`
+- `frontend/src/components/layout/sidebar.tsx`
+- `frontend/src/app/(auth)/login/page.tsx`
+- `frontend/src/app/globals.css`
+- `frontend/src/app/layout.tsx`
+
+### Commands run
+
+- `git status --short`
+- `cmd /c npx tsc --noEmit` (in `frontend`) -> **pass**
+- `docker compose exec frontend npx tsc --noEmit` -> failed because Docker daemon was not running (`dockerDesktopLinuxEngine` pipe not found)
+- `cmd /c npm run build` (in `frontend`) -> failed in local host due `spawn EPERM` environment restriction
+
+### Current status
+
+- Source changes are complete and TypeScript checks pass locally (`npx tsc --noEmit`).
+- Docker/runtime verification is pending until Docker Desktop daemon is running again.
+
+## Update 2026-05-06 (Brand layout tweak: Vi Vu)
+
+### What changed
+
+- Sidebar brand block adjusted to match requested position/style:
+  - keeps small uppercase label `VI VU`
+  - increases main `Vi Vu` size noticeably
+- Login header brand adjusted:
+  - removed small top label
+  - added large split-color brand (`Vi` dark + `Vu` orange)
+  - added note under brand: `Your personal finance.`
+  - keeps `Sign In` heading below brand block
+
+### Files edited
+
+- `frontend/src/components/layout/sidebar.tsx`
+- `frontend/src/app/(auth)/login/page.tsx`
+
+### Commands run
+
+- `cmd /c npx tsc --noEmit` (frontend) -> pass
+
+## Update 2026-05-06 (Sidebar header alignment)
+
+### What changed
+
+- Aligned sidebar collapse icon on the same horizontal row as the project name (`Vault`) in expanded mode.
+- Collapsed mode keeps the expand icon centered as before.
+
+### Files edited
+
+- `frontend/src/components/layout/sidebar.tsx`
+
+### Commands run
+
+- `cmd /c npx tsc --noEmit` (frontend) -> pass
+
+## Update 2026-05-06 (Sidebar collapse rail with icons)
+
+### What changed
+
+- Moved sidebar toggle from topbar to sidebar header as icon button.
+- Added true collapsed sidebar mode:
+  - keeps a vertical rail visible (`w-20`)
+  - shows page icons only (no text labels)
+  - still supports navigation by icon
+- Expanded mode remains full sidebar with labels and branding.
+- Profile/avatar menu works in both modes (collapsed mode opens menu to the right).
+
+### Files edited
+
+- `frontend/src/components/layout/sidebar.tsx`
+- `frontend/src/components/layout/app-shell.tsx`
+- `frontend/src/components/layout/topbar.tsx`
+
+### Commands run
+
+- `cmd /c npx tsc --noEmit` (frontend) -> pass
+
+## Update 2026-05-06 (Sidebar icons for pages)
+
+### What changed
+
+- Added page icons in sidebar navigation (left-aligned icon + label) using `lucide-react`.
+- Current icon mapping:
+  - Dashboard -> `LayoutDashboard`
+  - Transactions -> `CircleDollarSign`
+  - Budgets -> `Wallet`
+  - Goals -> `Target`
+  - Reports -> `BarChart3`
+  - User Management -> `Users`
+
+### Files edited
+
+- `frontend/src/components/layout/sidebar.tsx`
+
+### Commands run
+
+- `cmd /c npx tsc --noEmit` (frontend) -> pass
+
+## Update 2026-05-06 (Sidebar brand cleanup)
+
+### What changed
+
+- Removed the small gray `VAULT` label from sidebar header.
+- Updated large `Vault` brand text to two-tone styling:
+  - `Va` in dark text
+  - `ult` in primary accent color
+
+### Files edited
+
+- `frontend/src/components/layout/sidebar.tsx`
+
+### Commands run
+
+- `cmd /c npx tsc --noEmit` (frontend) -> pass
+
+## Update 2026-05-06 (Rename brand to Vault)
+
+### What changed
+
+- Renamed frontend branding from `Vi Vu` to `Vault`.
+- Updated areas:
+  - app metadata title/description
+  - sidebar brand label/header
+  - login top brand text
+
+### Files edited
+
+- `frontend/src/app/layout.tsx`
+- `frontend/src/components/layout/sidebar.tsx`
+- `frontend/src/app/(auth)/login/page.tsx`
+
+### Commands run
+
+- `cmd /c npx tsc --noEmit` (frontend) -> pass
+
+## Update 2026-05-06 (Login brand position)
+
+### What changed
+
+- Moved `Vi Vu` brand text out of the login form card.
+- Brand is now centered above the sign-in card as a separate header block.
+- Login card now starts directly with `Sign In` content.
+
+### Files edited
+
+- `frontend/src/app/(auth)/login/page.tsx`
+
+### Commands run
+
+- `cmd /c npx tsc --noEmit` (frontend) -> pass
+
+## Update 2026-05-06 (Brand subtitle placement adjustment)
+
+### What changed
+
+- Moved subtitle `Your Personal Finance.` from login page to main information page sidebar branding area.
+- Sidebar now shows:
+  - `VI VU` (small label)
+  - `Vi Vu` (large brand text)
+  - `Your Personal Finance.` (subtitle)
+- Login page keeps large `Vi Vu` brand and `Sign In`, but no longer shows the subtitle line.
+
+### Files edited
+
+- `frontend/src/components/layout/sidebar.tsx`
+- `frontend/src/app/(auth)/login/page.tsx`
+
+### Commands run
+
+- `cmd /c npx tsc --noEmit` (frontend) -> pass

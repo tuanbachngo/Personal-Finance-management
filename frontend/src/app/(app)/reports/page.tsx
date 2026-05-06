@@ -19,7 +19,6 @@ import { SankeyCashFlow } from "@/components/finance/sankey-cash-flow";
 import { AppShell } from "@/components/layout/app-shell";
 import {
   extractApiErrorMessage,
-  getCategorySpending,
   getDailySummary,
   getMetaAccounts,
   getTransactions,
@@ -27,10 +26,17 @@ import {
 import { formatCurrency, formatDate, formatDateTime } from "@/lib/format";
 import { useAuth } from "@/providers/auth-provider";
 import { useUserScope } from "@/providers/user-scope-provider";
-import type { CategorySpendingPoint, TransactionRecord } from "@/types/api";
+import type { TransactionRecord } from "@/types/api";
 
 type TransactionWithCategory = TransactionRecord & {
   CategoryName?: string | null;
+};
+
+type SpendingCategoryPoint = {
+  CategoryKey: string;
+  CategoryName: string;
+  TotalSpent: number;
+  TotalTransactions: number;
 };
 
 const CATEGORY_COLORS = [
@@ -50,6 +56,27 @@ const CATEGORY_COLORS = [
 
 function toIsoDate(value: Date): string {
   return value.toISOString().slice(0, 10);
+}
+
+function getMonthKey(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+  const text = String(value).trim();
+  if (text.length >= 7 && /^\d{4}-\d{2}/.test(text)) {
+    return text.slice(0, 7);
+  }
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  return `${parsed.getFullYear()}-${month}`;
+}
+
+function formatMonthLabel(monthKey: string): string {
+  const [year, month] = monthKey.split("-");
+  return `${month}/${year}`;
 }
 
 function getDisplayName(user?: { UserName?: string | null; Email?: string | null } | null): string {
@@ -84,6 +111,7 @@ export default function ReportsPage() {
   const displayName = getDisplayName(scopedUser);
 
   const [activeTab, setActiveTab] = useState<"cash-flow" | "spending" | "income">("cash-flow");
+  const [selectedMonth, setSelectedMonth] = useState("");
 
   const now = new Date();
   const prev = new Date();
@@ -91,12 +119,6 @@ export default function ReportsPage() {
   const [startDate, setStartDate] = useState(toIsoDate(prev));
   const [endDate, setEndDate] = useState(toIsoDate(now));
   const [dateRangeInitialized, setDateRangeInitialized] = useState(false);
-
-  const categoryQuery = useQuery({
-    queryKey: ["report-category", userId],
-    queryFn: () => getCategorySpending(userId),
-    enabled: Boolean(userId)
-  });
 
   const dailyQuery = useQuery({
     queryKey: ["daily-summary", userId, startDate, endDate],
@@ -120,6 +142,27 @@ export default function ReportsPage() {
     queryFn: () => getMetaAccounts(userId),
     enabled: Boolean(userId)
   });
+
+  const monthOptions = useMemo(() => {
+    const keys = new Set<string>();
+    (transactionsQuery.data || []).forEach((row) => {
+      const key = getMonthKey(row.TransactionDate);
+      if (key) {
+        keys.add(key);
+      }
+    });
+    return Array.from(keys).sort((a, b) => b.localeCompare(a));
+  }, [transactionsQuery.data]);
+
+  useEffect(() => {
+    if (!selectedMonth && monthOptions.length > 0) {
+      setSelectedMonth(monthOptions[0]);
+      return;
+    }
+    if (selectedMonth && monthOptions.length > 0 && !monthOptions.includes(selectedMonth)) {
+      setSelectedMonth(monthOptions[0]);
+    }
+  }, [monthOptions, selectedMonth]);
 
   useEffect(() => {
     if (dateRangeInitialized) {
@@ -203,10 +246,19 @@ export default function ReportsPage() {
     return { nodes, links };
   }, [transactionsQuery.data, startDate, endDate]);
 
+  const selectedMonthTransactions = useMemo(() => {
+    const txs = (transactionsQuery.data || []) as TransactionWithCategory[];
+    if (!selectedMonth) {
+      return txs;
+    }
+    return txs.filter((transaction) => getMonthKey(transaction.TransactionDate) === selectedMonth);
+  }, [transactionsQuery.data, selectedMonth]);
+
   const incomeData = useMemo(() => {
-    const txs = transactionsQuery.data || [];
     const accounts = accountsQuery.data || [];
-    const incomeTxs = txs.filter((transaction) => transaction.TransactionType === "INCOME");
+    const incomeTxs = selectedMonthTransactions.filter(
+      (transaction) => transaction.TransactionType === "INCOME"
+    );
 
     const map = new Map<number, number>();
 
@@ -217,14 +269,45 @@ export default function ReportsPage() {
       );
     });
 
-    return Array.from(map.entries()).map(([accountId, total]) => {
-      const account = accounts.find((item) => item.AccountID === accountId);
-      return {
-        AccountName: account?.BankName || "Unknown source",
-        TotalIncome: total
-      };
+    return Array.from(map.entries())
+      .map(([accountId, total]) => {
+        const account = accounts.find((item) => item.AccountID === accountId);
+        return {
+          AccountName: account?.BankName || "Unknown source",
+          TotalIncome: total
+        };
+      })
+      .sort((a, b) => Number(b.TotalIncome) - Number(a.TotalIncome));
+  }, [selectedMonthTransactions, accountsQuery.data]);
+
+  const spendingData = useMemo(() => {
+    const expenses = selectedMonthTransactions.filter(
+      (transaction) => transaction.TransactionType === "EXPENSE"
+    );
+    const map = new Map<string, SpendingCategoryPoint>();
+
+    expenses.forEach((transaction) => {
+      const categoryName = transaction.CategoryName || "Uncategorized";
+      const categoryKey =
+        transaction.CategoryID !== null && transaction.CategoryID !== undefined
+          ? String(transaction.CategoryID)
+          : categoryName.toLowerCase();
+      const existing = map.get(categoryKey);
+      if (!existing) {
+        map.set(categoryKey, {
+          CategoryKey: categoryKey,
+          CategoryName: categoryName,
+          TotalSpent: Number(transaction.Amount),
+          TotalTransactions: 1
+        });
+        return;
+      }
+      existing.TotalSpent += Number(transaction.Amount);
+      existing.TotalTransactions += 1;
     });
-  }, [transactionsQuery.data, accountsQuery.data]);
+
+    return Array.from(map.values()).sort((a, b) => b.TotalSpent - a.TotalSpent);
+  }, [selectedMonthTransactions]);
 
   const incomeTotal = useMemo(() => {
     return incomeData.reduce((sum, row) => sum + Number(row.TotalIncome || 0), 0);
@@ -239,7 +322,7 @@ export default function ReportsPage() {
   }, [incomeData, incomeTotal]);
 
   const incomeTransactionsTable = useMemo(() => {
-    return (transactionsQuery.data || [])
+    return selectedMonthTransactions
       .filter((transaction) => transaction.TransactionType === "INCOME")
       .sort(
         (a, b) =>
@@ -258,22 +341,20 @@ export default function ReportsPage() {
           Note: row.Description || ""
         };
       });
-  }, [transactionsQuery.data, accountsQuery.data]);
+  }, [selectedMonthTransactions, accountsQuery.data]);
 
   const categorySummaryRows = useMemo(() => {
-    const rows = categoryQuery.data || [];
-    const total = rows.reduce((sum, row) => sum + Number(row.TotalSpent || 0), 0);
-
-    return rows.map((row) => ({
+    const total = spendingData.reduce((sum, row) => sum + Number(row.TotalSpent || 0), 0);
+    return spendingData.map((row) => ({
       Category: row.CategoryName,
       "Total spent": formatCurrency(row.TotalSpent),
       Share: total > 0 ? formatPercent((Number(row.TotalSpent) / total) * 100) : "0.0%",
       "Transactions": row.TotalTransactions
     }));
-  }, [categoryQuery.data]);
+  }, [spendingData]);
 
   const spendingTransactionsRows = useMemo(() => {
-    return (transactionsQuery.data || [])
+    return selectedMonthTransactions
       .filter((transaction) => transaction.TransactionType === "EXPENSE")
       .sort(
         (a, b) =>
@@ -293,14 +374,16 @@ export default function ReportsPage() {
           Description: row.Description || ""
         };
       });
-  }, [transactionsQuery.data, accountsQuery.data]);
+  }, [selectedMonthTransactions, accountsQuery.data]);
+
+  const selectedMonthLabel = selectedMonth ? formatMonthLabel(selectedMonth) : "Latest month";
 
   const cashFlowLoading = transactionsQuery.isLoading || dailyQuery.isLoading;
-  const spendingLoading = categoryQuery.isLoading;
+  const spendingLoading = transactionsQuery.isLoading || accountsQuery.isLoading;
   const incomeLoading = transactionsQuery.isLoading || accountsQuery.isLoading;
 
   const cashFlowError = transactionsQuery.error || dailyQuery.error;
-  const spendingError = categoryQuery.error;
+  const spendingError = transactionsQuery.error || accountsQuery.error;
   const incomeError = transactionsQuery.error || accountsQuery.error;
 
   const activeLoading =
@@ -336,10 +419,6 @@ export default function ReportsPage() {
               if (activeTab === "cash-flow") {
                 transactionsQuery.refetch();
                 dailyQuery.refetch();
-                return;
-              }
-              if (activeTab === "spending") {
-                categoryQuery.refetch();
                 return;
               }
               transactionsQuery.refetch();
@@ -393,6 +472,27 @@ export default function ReportsPage() {
               />
             </div>
           ) : null}
+
+          {activeTab !== "cash-flow" ? (
+            <div className="mb-2 flex items-center gap-2">
+              <label className="text-sm font-semibold text-muted">Month</label>
+              <select
+                className="focus-ring rounded-md border border-border bg-surface px-3 py-1.5 text-sm font-medium text-text"
+                value={selectedMonth}
+                onChange={(event) => setSelectedMonth(event.target.value)}
+                disabled={monthOptions.length === 0}
+              >
+                {monthOptions.length === 0 ? (
+                  <option value="">No transaction month</option>
+                ) : null}
+                {monthOptions.map((monthKey) => (
+                  <option key={monthKey} value={monthKey}>
+                    {formatMonthLabel(monthKey)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
         </div>
 
         <div className="grid gap-6">
@@ -412,14 +512,17 @@ export default function ReportsPage() {
 
           {activeTab === "spending" && !activeError ? (
             <>
-              <SpendingByCategoryCard data={categoryQuery.data || []} />
+              <SpendingByCategoryCard
+                data={spendingData}
+                monthLabel={selectedMonthLabel}
+              />
               <DataTable
-                title="Summary"
+                title={`Summary - ${selectedMonthLabel}`}
                 rows={categorySummaryRows}
                 emptyMessage="No spending data found."
               />
               <DataTable
-                title="Spending Transactions"
+                title={`Spending Transactions - ${selectedMonthLabel}`}
                 rows={spendingTransactionsRows}
                 emptyMessage="No spending transactions found."
               />
@@ -428,14 +531,14 @@ export default function ReportsPage() {
 
           {activeTab === "income" && !activeError ? (
             <>
-              <IncomeBySourceCard data={incomeData} />
+              <IncomeBySourceCard data={incomeData} monthLabel={selectedMonthLabel} />
               <DataTable
-                title="Summary"
+                title={`Summary - ${selectedMonthLabel}`}
                 rows={incomeSourceRows}
                 emptyMessage="No income source data found."
               />
               <DataTable
-                title="Income Transactions"
+                title={`Income Transactions - ${selectedMonthLabel}`}
                 rows={incomeTransactionsTable}
                 emptyMessage="No income transactions found."
               />
@@ -471,9 +574,11 @@ function TabButton({
 }
 
 function IncomeBySourceCard({
-  data
+  data,
+  monthLabel
 }: {
   data: { AccountName: string; TotalIncome: number }[];
+  monthLabel: string;
 }) {
   const total = data.reduce((sum, row) => sum + Number(row.TotalIncome || 0), 0);
   const sortedData = [...data].sort((a, b) => Number(b.TotalIncome) - Number(a.TotalIncome));
@@ -489,7 +594,7 @@ function IncomeBySourceCard({
             Your income distribution
           </h2>
           <p className="mt-1 text-sm text-muted">
-            See which accounts contribute most to your total income.
+            See which sources contributed income in {monthLabel}.
           </p>
         </div>
 
@@ -581,7 +686,13 @@ function IncomeBySourceCard({
   );
 }
 
-function SpendingByCategoryCard({ data }: { data: CategorySpendingPoint[] }) {
+function SpendingByCategoryCard({
+  data,
+  monthLabel
+}: {
+  data: SpendingCategoryPoint[];
+  monthLabel: string;
+}) {
   const total = data.reduce((sum, row) => sum + Number(row.TotalSpent || 0), 0);
   const sortedData = [...data].sort((a, b) => Number(b.TotalSpent) - Number(a.TotalSpent));
 
@@ -596,7 +707,7 @@ function SpendingByCategoryCard({ data }: { data: CategorySpendingPoint[] }) {
             Your category breakdown
           </h2>
           <p className="mt-1 text-sm text-muted">
-            See where your money went, grouped by spending category.
+            See where your money went in {monthLabel}, grouped by category.
           </p>
         </div>
 
@@ -639,7 +750,7 @@ function SpendingByCategoryCard({ data }: { data: CategorySpendingPoint[] }) {
                 >
                   {sortedData.map((entry, index) => (
                     <Cell
-                      key={entry.CategoryID}
+                      key={entry.CategoryKey}
                       fill={CATEGORY_COLORS[index % CATEGORY_COLORS.length]}
                     />
                   ))}
@@ -660,7 +771,7 @@ function SpendingByCategoryCard({ data }: { data: CategorySpendingPoint[] }) {
               const percent = total > 0 ? (Number(row.TotalSpent) / total) * 100 : 0;
 
               return (
-                <div key={row.CategoryID} className="flex items-start gap-3">
+                <div key={row.CategoryKey} className="flex items-start gap-3">
                   <span
                     className="mt-1 h-3 w-3 shrink-0 rounded-full"
                     style={{

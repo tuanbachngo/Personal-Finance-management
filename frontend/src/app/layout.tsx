@@ -18,8 +18,8 @@ const jetBrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Personal Finance Management",
-  description: "Next.js frontend skeleton for Personal Finance Management System"
+  title: "Vault",
+  description: "Vault personal finance dashboard"
 };
 
 export default function RootLayout({

@@ -60,12 +60,24 @@ export default function LoginPage() {
   });
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-xl items-center justify-center p-6">
-      <section className="w-full rounded-lg border border-border bg-surface p-8">
+    <main className="relative isolate mx-auto flex min-h-screen w-full max-w-xl items-center justify-center overflow-hidden p-6">
+      <div className="login-bg-orb left-[-70px] top-[-20px] h-52 w-52 bg-primary/60" />
+      <div className="login-bg-orb login-bg-orb-second right-[-100px] top-[20%] h-72 w-72 bg-success/40" />
+      <div className="login-bg-orb login-bg-orb-third bottom-[-120px] left-[20%] h-80 w-80 bg-warning/35" />
+
+      <div className="relative z-10 w-full">
+        <div className="mb-6 text-center">
+          <h1 className="text-5xl font-black leading-none tracking-tight">
+            <span className="text-text">Va</span>
+            <span className="text-primary">ult</span>
+          </h1>
+        </div>
+
+        <section className="w-full rounded-lg border border-border bg-surface/95 p-8 shadow-lg backdrop-blur">
         <div className="mb-6">
-          <h1 className="text-3xl font-semibold text-text">Personal Finance Login</h1>
+          <h2 className="text-3xl font-semibold text-text">Sign In</h2>
           <p className="mt-2 text-sm text-muted">
-            Sign in to access your dashboard and account overview.
+            Access your finance dashboard and continue where you left off.
           </p>
         </div>
 
@@ -133,7 +145,8 @@ export default function LoginPage() {
             Account locked? Verify unlock OTP
           </Link>
         </div>
-      </section>
+        </section>
+      </div>
     </main>
   );
 }

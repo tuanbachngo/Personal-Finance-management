@@ -35,6 +35,37 @@ a {
   text-decoration: none;
 }
 
+@keyframes vv-float {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(16px, -18px, 0) scale(1.06);
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+.login-bg-orb {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(44px);
+  opacity: 0.35;
+  pointer-events: none;
+  animation: vv-float 12s ease-in-out infinite;
+}
+
+.login-bg-orb-second {
+  animation-duration: 14s;
+  animation-delay: -3s;
+}
+
+.login-bg-orb-third {
+  animation-duration: 16s;
+  animation-delay: -6s;
+}
+
 .focus-ring {
   @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-bg;
 }
