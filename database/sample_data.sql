@@ -853,7 +853,7 @@ WHERE CategoryID IN (1, 8, 7)
 -- ============================================================
 -- SAVING GOAL CATEGORIES (canonical seed — merged from migration 002)
 -- ============================================================
-INSERT INTO SavingGoalCategories
+INSERT IGNORE INTO SavingGoalCategories
     (GoalCategoryID, CategoryKey, CategoryName, IconEmoji, Description, IsCustomAllowed, IsActive, SortOrder)
 VALUES
     (1,  'EMERGENCY',    'Quỹ khẩn cấp',        '🛡️',  'Dự phòng rủi ro bất ngờ',              0, 1,  10),
