@@ -21,7 +21,7 @@ function stringifyValue(value: unknown): string {
 export function DataTable({ 
   title, 
   rows, 
-  emptyMessage = "No data found.",
+  emptyMessage = "Không có dữ liệu.",
   selectable = false,
   selectedIds = [],
   onSelectionChange,

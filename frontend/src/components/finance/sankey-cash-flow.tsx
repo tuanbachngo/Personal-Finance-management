@@ -5,6 +5,7 @@ import { ResponsiveContainer, Sankey, Tooltip } from "recharts";
 type SankeyNode = {
   name: string;
   color?: string;
+  displayValue?: number; // ghi đè giá trị hiển thị (thay vì dùng auto-calculated flow)
 };
 
 type SankeyLink = {
@@ -22,7 +23,7 @@ type Props = {
 
 function formatNumber(value: number): string {
   return new Intl.NumberFormat("vi-VN", {
-    maximumFractionDigits: 0
+    maximumFractionDigits: 0,
   }).format(value);
 }
 
@@ -34,17 +35,9 @@ function hasEnoughFlowData(data: Props["data"]): boolean {
   const positiveLinks = data.links.filter((link) => Number(link.value) > 0);
   const expenseLinks = positiveLinks.filter((link) => Number(link.target) >= 2);
 
-  if (data.nodes.length < 3) {
-    return false;
-  }
-
-  if (positiveLinks.length < 1) {
-    return false;
-  }
-
-  if (expenseLinks.length < 1) {
-    return false;
-  }
+  if (data.nodes.length < 3) return false;
+  if (positiveLinks.length < 1) return false;
+  if (expenseLinks.length < 1) return false;
 
   return true;
 }
@@ -53,13 +46,12 @@ function NotEnoughDataState() {
   return (
     <div className="h-[500px] w-full rounded-xl border border-border bg-surface p-5 shadow-sm">
       <h2 className="mb-6 text-lg font-semibold tracking-tight text-text">
-        Cash Flow
+        Dòng tiền
       </h2>
 
       <div className="flex h-[400px] flex-col items-center justify-center rounded-xl border border-dashed border-border bg-bg/40">
         <div className="relative mb-5">
           <div className="absolute inset-0 rounded-full bg-primary/20 blur-2xl" />
-
           <svg
             width="96"
             height="96"
@@ -83,10 +75,9 @@ function NotEnoughDataState() {
             />
           </svg>
         </div>
-
-        <p className="text-base font-semibold text-text">Not enough data</p>
+        <p className="text-base font-semibold text-text">Chưa đủ dữ liệu</p>
         <p className="mt-2 max-w-md text-center text-sm text-muted">
-          Select a longer time range or add more income and expense records to generate a meaningful cash flow.
+          Hãy chọn khoảng thời gian dài hơn hoặc thêm giao dịch thu/chi để tạo biểu đồ dòng tiền có ý nghĩa.
         </p>
       </div>
     </div>
@@ -99,9 +90,11 @@ const CustomNode = ({
   width,
   height,
   payload,
-  containerWidth
+  containerWidth,
 }: any) => {
   const isOut = x + width + 120 > containerWidth;
+  // Dùng displayValue nếu được truyền, ngược lại dùng value tự tính của Recharts
+  const displayVal = payload.displayValue ?? payload.value ?? 0;
 
   return (
     <g>
@@ -137,7 +130,7 @@ const CustomNode = ({
         fontWeight="500"
         fill="#6B7280"
       >
-        {formatNumber(Number(payload.value || 0))}
+        {formatNumber(Number(displayVal))}
       </text>
     </g>
   );
@@ -153,7 +146,7 @@ const CustomLink = (props: any) => {
     targetControlX,
     linkWidth,
     index,
-    payload
+    payload,
   } = props;
 
   const gradientId = `cashFlowLinkGradient${index}`;
@@ -171,9 +164,16 @@ const CustomLink = (props: any) => {
   return (
     <g>
       <defs>
-        <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor={sourceColor} stopOpacity="0.28" />
-          <stop offset="100%" stopColor={targetColor} stopOpacity="0.28" />
+        <linearGradient
+          id={gradientId}
+          x1={sourceX}
+          y1={sourceY}
+          x2={targetX}
+          y2={targetY}
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop offset="0%" stopColor={sourceColor} stopOpacity="0.3" />
+          <stop offset="100%" stopColor={targetColor} stopOpacity="0.3" />
         </linearGradient>
       </defs>
 
@@ -194,7 +194,7 @@ const CustomLink = (props: any) => {
 export function SankeyCashFlow({ data }: Props) {
   const positiveData = {
     nodes: data?.nodes || [],
-    links: (data?.links || []).filter((link) => Number(link.value) > 0)
+    links: (data?.links || []).filter((link) => Number(link.value) > 0),
   };
 
   if (!hasEnoughFlowData(positiveData)) {
@@ -202,20 +202,20 @@ export function SankeyCashFlow({ data }: Props) {
   }
 
   return (
-    <div className="h-[600px] w-full rounded-xl border border-border bg-surface p-5 shadow-sm">
+    <div className="h-[750px] w-full rounded-xl border border-border bg-surface p-5 shadow-sm">
       <h2 className="mb-6 text-lg font-semibold tracking-tight text-text">
-        Cash Flow
+        Dòng tiền
       </h2>
 
-      <div className="h-[500px] w-full overflow-hidden">
+      <div className="h-[600px] w-full overflow-hidden">
         <ResponsiveContainer width="100%" height="100%">
           <Sankey
             data={positiveData}
             node={<CustomNode />}
             link={<CustomLink />}
-            nodePadding={48}
-            nodeWidth={14}
-            margin={{ left: 24, right: 190, top: 32, bottom: 32 }}
+            nodePadding={20}
+            nodeWidth={16}
+            margin={{ left: 8, right: 200, top: 32, bottom: 32 }}
           >
             <Tooltip
               contentStyle={{
@@ -223,7 +223,7 @@ export function SankeyCashFlow({ data }: Props) {
                 borderRadius: "8px",
                 border: "1px solid #E5E7EB",
                 boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)",
-                color: "#111827"
+                color: "#111827",
               }}
               formatter={(value) => formatNumber(Number(value))}
             />

@@ -70,7 +70,7 @@ export default function ProfilePage() {
     },
     onError: (error: unknown) => {
       setInfoMessage("");
-      setInfoError(extractApiErrorMessage(error, "Failed to update profile."));
+      setInfoError(extractApiErrorMessage(error, "Không thể cập nhật hồ sơ."));
     }
   });
 
@@ -82,7 +82,7 @@ export default function ProfilePage() {
     },
     onError: (error: unknown) => {
       setPasswordMessage("");
-      setPasswordError(extractApiErrorMessage(error, "Failed to change password."));
+      setPasswordError(extractApiErrorMessage(error, "Không thể đổi mật khẩu."));
     }
   });
 
@@ -105,11 +105,11 @@ export default function ProfilePage() {
     const confirmPassword = passwordForm.confirmPassword.trim();
 
     if (!currentPassword || !newPassword || !confirmPassword) {
-      setPasswordError("Please complete all password fields.");
+      setPasswordError("Vui lòng điền đầy đủ các trường mật khẩu.");
       return;
     }
     if (newPassword !== confirmPassword) {
-      setPasswordError("New password and confirm password do not match.");
+      setPasswordError("Mật khẩu mới và xác nhận mật khẩu không khớp.");
       return;
     }
 
@@ -122,8 +122,8 @@ export default function ProfilePage() {
   return (
     <AuthGuard>
       <AppShell
-        title="Profile"
-        subtitle="Manage personal info and password for your signed-in account."
+        title="Hồ sơ cá nhân"
+        subtitle="Quản lý thông tin cá nhân và mật khẩu của tài khoản đang đăng nhập."
       >
         <section className="rounded-2xl border border-border bg-surface p-5 shadow-sm">
           <div className="mb-4 flex gap-2">
@@ -136,7 +136,7 @@ export default function ProfilePage() {
               }`}
               onClick={() => setActiveTab("info")}
             >
-              Personal Info
+              Thông tin cá nhân
             </button>
             <button
               type="button"
@@ -147,14 +147,14 @@ export default function ProfilePage() {
               }`}
               onClick={() => setActiveTab("password")}
             >
-              Change Password
+              Đổi mật khẩu
             </button>
           </div>
 
           {activeTab === "info" ? (
             <div className="grid gap-3 md:max-w-xl">
               <label className="block">
-                <span className="mb-1 block text-sm text-muted">User name</span>
+                <span className="mb-1 block text-sm text-muted">Tên người dùng</span>
                 <input
                   className="focus-ring w-full rounded-md border border-border bg-bg px-3 py-2 text-text"
                   value={infoForm.userName}
@@ -176,7 +176,7 @@ export default function ProfilePage() {
               </label>
 
               <label className="block">
-                <span className="mb-1 block text-sm text-muted">Phone number</span>
+                <span className="mb-1 block text-sm text-muted">Số điện thoại</span>
                 <input
                   className="focus-ring w-full rounded-md border border-border bg-bg px-3 py-2 text-text"
                   value={infoForm.phone}
@@ -204,7 +204,7 @@ export default function ProfilePage() {
                   disabled={updateInfoMutation.isPending}
                   onClick={handleSaveInfo}
                 >
-                  {updateInfoMutation.isPending ? "Saving..." : "Save profile"}
+                  {updateInfoMutation.isPending ? "Đang lưu..." : "Lưu hồ sơ"}
                 </button>
               </div>
             </div>
@@ -213,7 +213,7 @@ export default function ProfilePage() {
           {activeTab === "password" ? (
             <div className="grid gap-3 md:max-w-xl">
               <label className="block">
-                <span className="mb-1 block text-sm text-muted">Current password</span>
+                <span className="mb-1 block text-sm text-muted">Mật khẩu hiện tại</span>
                 <input
                   type="password"
                   className="focus-ring w-full rounded-md border border-border bg-bg px-3 py-2 text-text"
@@ -228,7 +228,7 @@ export default function ProfilePage() {
               </label>
 
               <label className="block">
-                <span className="mb-1 block text-sm text-muted">New password</span>
+                <span className="mb-1 block text-sm text-muted">Mật khẩu mới</span>
                 <input
                   type="password"
                   className="focus-ring w-full rounded-md border border-border bg-bg px-3 py-2 text-text"
@@ -240,7 +240,7 @@ export default function ProfilePage() {
               </label>
 
               <label className="block">
-                <span className="mb-1 block text-sm text-muted">Confirm new password</span>
+                <span className="mb-1 block text-sm text-muted">Xác nhận mật khẩu mới</span>
                 <input
                   type="password"
                   className="focus-ring w-full rounded-md border border-border bg-bg px-3 py-2 text-text"
@@ -272,7 +272,7 @@ export default function ProfilePage() {
                   disabled={changePasswordMutation.isPending}
                   onClick={handleChangePassword}
                 >
-                  {changePasswordMutation.isPending ? "Updating..." : "Change password"}
+                  {changePasswordMutation.isPending ? "Đang cập nhật..." : "Đổi mật khẩu"}
                 </button>
               </div>
             </div>
@@ -282,4 +282,3 @@ export default function ProfilePage() {
     </AuthGuard>
   );
 }
-

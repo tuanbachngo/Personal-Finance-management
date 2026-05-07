@@ -11,7 +11,7 @@ import {
   extractApiErrorMessage,
   getMetaAccounts
 } from "@/lib/api-client";
-import { formatDate } from "@/lib/format";
+import { formatCurrency, formatDate } from "@/lib/format";
 import {
   useCreateGoal,
   useCreateGoalContribution,
@@ -43,6 +43,7 @@ type GoalFormState = {
 type ContributionFormState = {
   goalId: number;
   goalName: string;
+  goalType: GoalTab;
   accountId: string;
   amount: string;
   contributionType: "DEPOSIT" | "WITHDRAW";
@@ -51,19 +52,11 @@ type ContributionFormState = {
 };
 
 const tabs: { label: string; value: GoalTab }[] = [
-  { label: "Save up", value: "SAVE_UP" },
-  { label: "Pay down", value: "PAY_DOWN" }
+  { label: "Tích lũy", value: "SAVE_UP" },
+  { label: "Trả nợ", value: "PAY_DOWN" }
 ];
 
 const today = new Date().toISOString().slice(0, 10);
-
-function formatCurrency(value: number | null | undefined): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0
-  }).format(Number(value || 0));
-}
 
 function getGoalIcon(goal: GoalProgressRecord): string {
   const name = goal.GoalName.toLowerCase();
@@ -83,6 +76,8 @@ function getGoalIcon(goal: GoalProgressRecord): string {
   if (name.includes("business")) return "💼";
   if (name.includes("investment") || name.includes("invest")) return "📈";
   if (name.includes("gift")) return "🎁";
+  if (name.includes("nợ") || name.includes("no ") || name.includes("vay")) return "💳";
+  if (name.includes("debt") || name.includes("loan") || name.includes("credit")) return "💳";
 
   if (type === "PAY_DOWN") return "💳";
 
@@ -119,6 +114,15 @@ function getProgressBarClass(alertLevel: string): string {
   if (normalized === "COMPLETED") return "bg-success";
 
   return "bg-success";
+}
+
+function getGoalAlertLabel(alertLevel: string): string {
+  const normalized = String(alertLevel || "").toUpperCase();
+  if (normalized === "COMPLETED") return "HOÀN THÀNH";
+  if (normalized === "OVERDUE") return "QUÁ HẠN";
+  if (normalized === "DUE_SOON") return "SẮP ĐẾN HẠN";
+  if (normalized === "CANCELLED") return "ĐÃ HỦY";
+  return "ĐANG THỰC HIỆN";
 }
 
 function buildCreateForm(goalType: GoalTab): GoalFormState {
@@ -215,13 +219,15 @@ export default function GoalsPage() {
     const completed = activeGoals.filter((goal) => goal.GoalAlertLevel === "COMPLETED").length;
     const dueSoon = activeGoals.filter((goal) => goal.GoalAlertLevel === "DUE_SOON").length;
     const progress = totalTarget > 0 ? (totalCurrent / totalTarget) * 100 : 0;
+    const remaining = Math.max(totalTarget - totalCurrent, 0);
 
     return {
       totalTarget,
       totalCurrent,
       completed,
       dueSoon,
-      progress
+      progress,
+      remaining
     };
   }, [visibleGoals]);
 
@@ -260,17 +266,17 @@ export default function GoalsPage() {
     };
 
     if (!payload.goal_name) {
-      window.alert("Goal name is required.");
+      window.alert("Vui lòng nhập tên mục tiêu.");
       return;
     }
 
     if (payload.target_amount <= 0) {
-      window.alert("Target amount must be greater than 0.");
+      window.alert("Số tiền mục tiêu phải lớn hơn 0.");
       return;
     }
 
     if (payload.current_amount < 0) {
-      window.alert("Current amount cannot be negative.");
+      window.alert("Số tiền hiện tại không được âm.");
       return;
     }
 
@@ -291,9 +297,11 @@ export default function GoalsPage() {
   };
 
   const openContributionForm = (goal: GoalProgressRecord) => {
+    const isPayDown = String(goal.GoalType || "").toUpperCase() === "PAY_DOWN";
     setContributionForm({
       goalId: goal.GoalID,
       goalName: goal.GoalName,
+      goalType: isPayDown ? "PAY_DOWN" : "SAVE_UP",
       accountId: goal.LinkedAccountID ? String(goal.LinkedAccountID) : "",
       amount: "",
       contributionType: "DEPOSIT",
@@ -308,7 +316,7 @@ export default function GoalsPage() {
     const amount = toNumber(contributionForm.amount);
 
     if (amount <= 0) {
-      window.alert("Contribution amount must be greater than 0.");
+      window.alert("Số tiền đóng góp phải lớn hơn 0.");
       return;
     }
 
@@ -330,7 +338,7 @@ export default function GoalsPage() {
   const handleDeleteGoal = async (goal: GoalProgressRecord) => {
     if (!userId) return;
 
-    const confirmed = window.confirm(`Delete goal "${goal.GoalName}"?`);
+    const confirmed = window.confirm(`Bạn có chắc muốn xóa mục tiêu "${goal.GoalName}"?`);
     if (!confirmed) return;
 
     await deleteGoalMutation.mutateAsync({ goalId: goal.GoalID, userId });
@@ -345,8 +353,8 @@ export default function GoalsPage() {
   return (
     <AuthGuard>
       <AppShell
-        title="Goals"
-        subtitle="Track savings goals, linked accounts, and payoff progress by user."
+        title="Mục tiêu"
+        subtitle="Theo dõi mục tiêu tài chính, tài khoản liên kết và tiến độ hoàn thành."
       >
         <div className="space-y-6">
           <section className="flex flex-col gap-4 rounded-2xl border border-border bg-surface p-4 shadow-sm lg:flex-row lg:items-center lg:justify-between">
@@ -382,16 +390,29 @@ export default function GoalsPage() {
                 className="focus-ring rounded-xl bg-primary px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-primary/90"
                 onClick={openCreateForm}
               >
-                + Add goal
+                + Thêm mục tiêu
               </button>
             </div>
           </section>
 
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <SummaryCard label="Total target" value={formatCurrency(summary.totalTarget)} />
-            <SummaryCard label="Current progress" value={formatCurrency(summary.totalCurrent)} />
-            <SummaryCard label="Completed goals" value={String(summary.completed)} />
-            <SummaryCard label="Due soon" value={String(summary.dueSoon)} />
+            <SummaryCard
+              label={activeTab === "PAY_DOWN" ? "Tổng dư nợ mục tiêu" : "Tổng mục tiêu"}
+              value={formatCurrency(summary.totalTarget)}
+            />
+            <SummaryCard
+              label={activeTab === "PAY_DOWN" ? "Đã trả" : "Tiến độ hiện tại"}
+              value={formatCurrency(summary.totalCurrent)}
+            />
+            <SummaryCard label="Mục tiêu đã hoàn thành" value={String(summary.completed)} />
+            <SummaryCard
+              label={activeTab === "PAY_DOWN" ? "Còn phải trả" : "Sắp đến hạn"}
+              value={
+                activeTab === "PAY_DOWN"
+                  ? formatCurrency(summary.remaining)
+                  : String(summary.dueSoon)
+              }
+            />
           </section>
 
           <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -399,12 +420,12 @@ export default function GoalsPage() {
               <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <h2 className="text-lg font-bold text-text">
-                    {activeTab === "SAVE_UP" ? "Save up goals" : "Pay down goals"}
+                    {activeTab === "SAVE_UP" ? "Mục tiêu tích lũy" : "Mục tiêu trả nợ"}
                   </h2>
                   <p className="mt-1 text-xs text-muted">
                     {activeTab === "SAVE_UP"
-                      ? "Savings targets linked to specific future expenses."
-                      : "Debt or liability payoff goals tracked by target balance."}
+                      ? "Mục tiêu tiết kiệm gắn với các nhu cầu tài chính trong tương lai."
+                      : "Mục tiêu trả nợ hoặc nghĩa vụ tài chính theo số dư mục tiêu."}
                   </p>
                 </div>
 
@@ -412,17 +433,17 @@ export default function GoalsPage() {
                   <p className="font-mono text-xl font-black text-text">
                     {summary.progress.toFixed(1)}%
                   </p>
-                  <p className="text-xs text-muted">average progress</p>
+                  <p className="text-xs text-muted">tiến độ trung bình</p>
                 </div>
               </div>
 
               {goalsQuery.isLoading ? (
-                <LoadingSkeleton label="Loading goals..." />
+                <LoadingSkeleton label="Đang tải mục tiêu..." />
               ) : null}
 
               {goalsQuery.isError ? (
                 <ErrorState
-                  title="Failed to load goals"
+                  title="Không thể tải mục tiêu"
                   detail={extractApiErrorMessage(goalsQuery.error)}
                   onRetry={() => goalsQuery.refetch()}
                 />
@@ -430,16 +451,16 @@ export default function GoalsPage() {
 
               {!goalsQuery.isLoading && !goalsQuery.isError && visibleGoals.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-border bg-bg p-8 text-center">
-                  <p className="text-sm font-semibold text-text">No goals found.</p>
+                  <p className="text-sm font-semibold text-text">Chưa có mục tiêu nào.</p>
                   <p className="mt-2 text-sm text-muted">
-                    Create your first goal to start tracking progress for this user.
+                    Tạo mục tiêu đầu tiên để bắt đầu theo dõi tiến độ cho người dùng này.
                   </p>
                   <button
                     type="button"
                     className="focus-ring mt-4 rounded-xl bg-primary px-4 py-2 text-sm font-bold text-white"
                     onClick={openCreateForm}
                   >
-                    + Add goal
+                    + Thêm mục tiêu
                   </button>
                 </div>
               ) : null}
@@ -465,17 +486,17 @@ export default function GoalsPage() {
                           <span
                             className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${statusClass}`}
                           >
-                            {goal.GoalAlertLevel}
+                            {getGoalAlertLabel(goal.GoalAlertLevel)}
                           </span>
                           <span className="text-xs text-muted">
-                            {goal.TargetDate ? formatDate(String(goal.TargetDate)) : "No target date"}
+                            {goal.TargetDate ? formatDate(String(goal.TargetDate)) : "Chưa đặt ngày đích"}
                           </span>
                         </div>
 
                         <p className="mt-1 text-xs text-muted">
-                          {goal.BankName ? `Linked to ${goal.BankName}` : "No linked account"}
+                          {goal.BankName ? `Liên kết với ${goal.BankName}` : "Chưa liên kết tài khoản"}
                           {goal.MonthlyRequired !== null && goal.MonthlyRequired !== undefined
-                            ? ` · ${formatCurrency(goal.MonthlyRequired)} monthly required`
+                            ? ` · Cần ${formatCurrency(goal.MonthlyRequired)} mỗi tháng`
                             : ""}
                         </p>
 
@@ -492,7 +513,7 @@ export default function GoalsPage() {
                           {formatCurrency(goal.CurrentAmount)}
                         </p>
                         <p className="mt-1 text-xs text-muted">
-                          {progress.toFixed(0)}% of {formatCurrency(goal.TargetAmount)}
+                          {progress.toFixed(0)}% của {formatCurrency(goal.TargetAmount)}
                         </p>
 
                         <div className="mt-3 flex flex-wrap gap-2 md:justify-end">
@@ -501,21 +522,23 @@ export default function GoalsPage() {
                             className="rounded-lg border border-border px-3 py-1 text-xs font-semibold text-text hover:bg-surface-hover"
                             onClick={() => openContributionForm(goal)}
                           >
-                            Add contribution
+                            {String(goal.GoalType).toUpperCase() === "PAY_DOWN"
+                              ? "Ghi nhận trả nợ"
+                              : "Thêm đóng góp"}
                           </button>
                           <button
                             type="button"
                             className="rounded-lg border border-border px-3 py-1 text-xs font-semibold text-text hover:bg-surface-hover"
                             onClick={() => openEditForm(goal)}
                           >
-                            Edit
+                            Sửa
                           </button>
                           <button
                             type="button"
                             className="rounded-lg border border-danger/30 px-3 py-1 text-xs font-semibold text-danger hover:bg-danger/10"
                             onClick={() => handleDeleteGoal(goal)}
                           >
-                            Delete
+                            Xóa
                           </button>
                         </div>
                       </div>
@@ -527,24 +550,26 @@ export default function GoalsPage() {
 
             <aside className="space-y-4">
               <section className="rounded-2xl border border-success/20 bg-success/10 p-5">
-                <p className="text-xs font-semibold text-muted">Progress summary</p>
+                <p className="text-xs font-semibold text-muted">Tóm tắt tiến độ</p>
                 <p className="mt-2 font-mono text-3xl font-black text-success">
                   {formatCurrency(summary.totalCurrent)}
                 </p>
                 <p className="mt-1 text-xs text-muted">
-                  Saved toward {formatCurrency(summary.totalTarget)} target.
+                  {activeTab === "PAY_DOWN"
+                    ? `Đã trả ${formatCurrency(summary.totalCurrent)} trên tổng dư nợ ${formatCurrency(summary.totalTarget)}.`
+                    : `Đã tích lũy hướng tới mục tiêu ${formatCurrency(summary.totalTarget)}.`}
                 </p>
               </section>
 
               <section className="rounded-2xl border border-border bg-surface p-5 shadow-sm">
-                <h3 className="font-bold text-text">Linked accounts</h3>
+                <h3 className="font-bold text-text">Tài khoản liên kết</h3>
 
                 {accountsQuery.isLoading ? (
-                  <p className="mt-4 text-sm text-muted">Loading accounts...</p>
+                  <p className="mt-4 text-sm text-muted">Đang tải tài khoản...</p>
                 ) : null}
 
                 {!accountsQuery.isLoading && (accountsQuery.data || []).length === 0 ? (
-                  <p className="mt-4 text-sm text-muted">No accounts found for this user.</p>
+                  <p className="mt-4 text-sm text-muted">Không tìm thấy tài khoản cho người dùng này.</p>
                 ) : null}
 
                 <div className="mt-4 space-y-3">
@@ -562,7 +587,7 @@ export default function GoalsPage() {
                             {account.BankName}
                           </span>
                           <span className="text-xs text-muted">
-                            Balance {formatCurrency(account.Balance)}
+                            Số dư {formatCurrency(account.Balance)}
                           </span>
                         </div>
                       </div>
@@ -580,10 +605,10 @@ export default function GoalsPage() {
               <div className="mb-5 flex items-center justify-between">
                 <div>
                   <h2 className="text-lg font-bold text-text">
-                    {goalFormMode === "CREATE" ? "Add goal" : "Edit goal"}
+                    {goalFormMode === "CREATE" ? "Thêm mục tiêu" : "Sửa mục tiêu"}
                   </h2>
                   <p className="text-xs text-muted">
-                    Goals are stored per user and shown by current user scope.
+                    Mục tiêu được lưu theo người dùng và hiển thị theo phạm vi hiện tại.
                   </p>
                 </div>
                 <button
@@ -591,23 +616,23 @@ export default function GoalsPage() {
                   className="rounded-lg px-3 py-1 text-sm text-muted hover:bg-surface-hover"
                   onClick={closeGoalForm}
                 >
-                  Close
+                  Đóng
                 </button>
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
-                <Field label="Goal name">
+                <Field label="Tên mục tiêu">
                   <input
                     className="input"
                     value={goalForm.goalName}
                     onChange={(event) =>
                       setGoalForm((prev) => ({ ...prev, goalName: event.target.value }))
                     }
-                    placeholder="Emergency Fund"
+                    placeholder="Quỹ dự phòng"
                   />
                 </Field>
 
-                <Field label="Goal type">
+                <Field label="Loại mục tiêu">
                   <select
                     className="input"
                     value={goalForm.goalType}
@@ -618,12 +643,12 @@ export default function GoalsPage() {
                       }))
                     }
                   >
-                    <option value="SAVE_UP">Save up</option>
-                    <option value="PAY_DOWN">Pay down</option>
+                    <option value="SAVE_UP">Tích lũy</option>
+                    <option value="PAY_DOWN">Trả nợ</option>
                   </select>
                 </Field>
 
-                <Field label="Linked account">
+                <Field label="Tài khoản liên kết">
                   <select
                     className="input"
                     value={goalForm.linkedAccountId}
@@ -634,7 +659,7 @@ export default function GoalsPage() {
                       }))
                     }
                   >
-                    <option value="">No linked account</option>
+                    <option value="">Không liên kết tài khoản</option>
                     {(accountsQuery.data || []).map((account) => (
                       <option key={account.AccountID} value={account.AccountID}>
                         {account.BankName}
@@ -643,7 +668,7 @@ export default function GoalsPage() {
                   </select>
                 </Field>
 
-                <Field label="Status">
+                <Field label="Trạng thái">
                   <select
                     className="input"
                     value={goalForm.status}
@@ -651,13 +676,13 @@ export default function GoalsPage() {
                       setGoalForm((prev) => ({ ...prev, status: event.target.value }))
                     }
                   >
-                    <option value="ACTIVE">Active</option>
-                    <option value="COMPLETED">Completed</option>
-                    <option value="CANCELLED">Cancelled</option>
+                    <option value="ACTIVE">Đang thực hiện</option>
+                    <option value="COMPLETED">Hoàn thành</option>
+                    <option value="CANCELLED">Đã hủy</option>
                   </select>
                 </Field>
 
-                <Field label="Target amount">
+                <Field label="Số tiền mục tiêu">
                   <input
                     className="input"
                     type="text"
@@ -672,7 +697,7 @@ export default function GoalsPage() {
                   />
                 </Field>
 
-                <Field label="Current amount">
+                <Field label="Số tiền hiện tại">
                   <input
                     className="input"
                     type="text"
@@ -687,7 +712,7 @@ export default function GoalsPage() {
                   />
                 </Field>
 
-                <Field label="Start date">
+                <Field label="Ngày bắt đầu">
                   <input
                     className="input"
                     type="date"
@@ -698,7 +723,7 @@ export default function GoalsPage() {
                   />
                 </Field>
 
-                <Field label="Target date">
+                <Field label="Ngày đích">
                   <input
                     className="input"
                     type="date"
@@ -709,7 +734,7 @@ export default function GoalsPage() {
                   />
                 </Field>
 
-                <Field label="Annual growth rate">
+                <Field label="Tăng trưởng năm (%)">
                   <input
                     className="input"
                     type="number"
@@ -725,14 +750,14 @@ export default function GoalsPage() {
                   />
                 </Field>
 
-                <Field label="Notes">
+                <Field label="Ghi chú">
                   <input
                     className="input"
                     value={goalForm.notes}
                     onChange={(event) =>
                       setGoalForm((prev) => ({ ...prev, notes: event.target.value }))
                     }
-                    placeholder="Optional note"
+                    placeholder="Ghi chú (tùy chọn)"
                   />
                 </Field>
               </div>
@@ -743,7 +768,7 @@ export default function GoalsPage() {
                   className="rounded-xl border border-border px-4 py-2 text-sm font-semibold text-text hover:bg-surface-hover"
                   onClick={closeGoalForm}
                 >
-                  Cancel
+                  Hủy
                 </button>
                 <button
                   type="button"
@@ -751,7 +776,7 @@ export default function GoalsPage() {
                   disabled={mutating}
                   onClick={submitGoalForm}
                 >
-                  {mutating ? "Saving..." : "Save goal"}
+                  {mutating ? "Đang lưu..." : "Lưu mục tiêu"}
                 </button>
               </div>
             </div>
@@ -763,7 +788,9 @@ export default function GoalsPage() {
             <div className="w-full max-w-lg rounded-2xl border border-border bg-surface p-5 shadow-2xl">
               <div className="mb-5 flex items-center justify-between">
                 <div>
-                  <h2 className="text-lg font-bold text-text">Add contribution</h2>
+                  <h2 className="text-lg font-bold text-text">
+                    {contributionForm.goalType === "PAY_DOWN" ? "Ghi nhận trả nợ" : "Thêm đóng góp"}
+                  </h2>
                   <p className="text-xs text-muted">{contributionForm.goalName}</p>
                 </div>
                 <button
@@ -771,12 +798,12 @@ export default function GoalsPage() {
                   className="rounded-lg px-3 py-1 text-sm text-muted hover:bg-surface-hover"
                   onClick={() => setContributionForm(null)}
                 >
-                  Close
+                  Đóng
                 </button>
               </div>
 
               <div className="grid gap-4">
-                <Field label="Account">
+                <Field label="Tài khoản">
                   <select
                     className="input"
                     value={contributionForm.accountId}
@@ -786,7 +813,7 @@ export default function GoalsPage() {
                       )
                     }
                   >
-                    <option value="">No account</option>
+                    <option value="">Không chọn tài khoản</option>
                     {(accountsQuery.data || []).map((account) => (
                       <option key={account.AccountID} value={account.AccountID}>
                         {account.BankName}
@@ -795,7 +822,7 @@ export default function GoalsPage() {
                   </select>
                 </Field>
 
-                <Field label="Type">
+                <Field label="Loại giao dịch">
                   <select
                     className="input"
                     value={contributionForm.contributionType}
@@ -810,12 +837,16 @@ export default function GoalsPage() {
                       )
                     }
                   >
-                    <option value="DEPOSIT">Deposit</option>
-                    <option value="WITHDRAW">Withdraw</option>
+                    <option value="DEPOSIT">
+                      {contributionForm.goalType === "PAY_DOWN" ? "Thanh toán nợ" : "Nạp vào"}
+                    </option>
+                    <option value="WITHDRAW">
+                      {contributionForm.goalType === "PAY_DOWN" ? "Giảm đã trả / hoàn tác" : "Rút ra"}
+                    </option>
                   </select>
                 </Field>
 
-                <Field label="Amount">
+                <Field label="Số tiền">
                   <input
                     className="input"
                     type="number"
@@ -830,7 +861,7 @@ export default function GoalsPage() {
                   />
                 </Field>
 
-                <Field label="Contribution date">
+                <Field label="Ngày đóng góp">
                   <input
                     className="input"
                     type="date"
@@ -843,7 +874,7 @@ export default function GoalsPage() {
                   />
                 </Field>
 
-                <Field label="Description">
+                <Field label="Mô tả">
                   <input
                     className="input"
                     value={contributionForm.description}
@@ -852,7 +883,7 @@ export default function GoalsPage() {
                         prev ? { ...prev, description: event.target.value } : prev
                       )
                     }
-                    placeholder="Optional description"
+                    placeholder="Mô tả (tùy chọn)"
                   />
                 </Field>
               </div>
@@ -863,7 +894,7 @@ export default function GoalsPage() {
                   className="rounded-xl border border-border px-4 py-2 text-sm font-semibold text-text hover:bg-surface-hover"
                   onClick={() => setContributionForm(null)}
                 >
-                  Cancel
+                  Hủy
                 </button>
                 <button
                   type="button"
@@ -871,7 +902,11 @@ export default function GoalsPage() {
                   disabled={mutating}
                   onClick={submitContributionForm}
                 >
-                  {mutating ? "Saving..." : "Save contribution"}
+                  {mutating
+                    ? "Đang lưu..."
+                    : contributionForm.goalType === "PAY_DOWN"
+                      ? "Lưu thanh toán nợ"
+                      : "Lưu đóng góp"}
                 </button>
               </div>
             </div>

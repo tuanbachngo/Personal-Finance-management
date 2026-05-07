@@ -19,7 +19,7 @@ export function BudgetProgressBars({ title, data }: Props) {
       <div className="rounded-xl border border-border bg-surface p-5 shadow-sm">
         <h2 className="mb-4 text-lg font-semibold tracking-tight text-text">{title}</h2>
         <div className="flex h-[200px] items-center justify-center">
-          <p className="text-sm text-muted">No budget data available.</p>
+          <p className="text-sm text-muted">Không có dữ liệu ngân sách.</p>
         </div>
       </div>
     );
@@ -61,7 +61,7 @@ export function BudgetProgressBars({ title, data }: Props) {
               {/* Over Budget Warning Indicator */}
               {isOverBudget && (
                 <p className="mt-1.5 text-xs font-medium text-red-500 text-right">
-                  Over budget by {formatCurrency(SpentAmount - PlannedAmount)}
+                  Vượt ngân sách {formatCurrency(SpentAmount - PlannedAmount)}
                 </p>
               )}
             </div>

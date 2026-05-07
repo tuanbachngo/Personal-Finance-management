@@ -100,15 +100,15 @@ export function ImportTransactionsModal({ isOpen, onClose, onImported }: Props) 
 
   const handleLoadPreview = async () => {
     if (!userId) {
-      setFormError("Missing user scope.");
+      setFormError("Thiếu phạm vi người dùng.");
       return;
     }
     if (!selectedFile) {
-      setFormError("Please choose CSV/Excel file.");
+      setFormError("Vui lòng chọn tệp CSV/Excel.");
       return;
     }
     if (!accountId) {
-      setFormError("Please choose account.");
+      setFormError("Vui lòng chọn tài khoản.");
       return;
     }
 
@@ -123,7 +123,7 @@ export function ImportTransactionsModal({ isOpen, onClose, onImported }: Props) 
       setStep(3);
     } catch (error) {
       setPreview(null);
-      setFormError(extractApiErrorMessage(error, "Failed to preview import file."));
+      setFormError(extractApiErrorMessage(error, "Không thể xem trước tệp import."));
     }
   };
 
@@ -152,7 +152,7 @@ export function ImportTransactionsModal({ isOpen, onClose, onImported }: Props) 
       onImported();
       setStep(4);
     } catch (error) {
-      setFormError(extractApiErrorMessage(error, "Failed to confirm import."));
+      setFormError(extractApiErrorMessage(error, "Không thể xác nhận import."));
     }
   };
 
@@ -161,17 +161,17 @@ export function ImportTransactionsModal({ isOpen, onClose, onImported }: Props) 
       <div className="w-full max-w-5xl rounded-2xl border border-border bg-surface p-6 shadow-lg">
         <div className="mb-5 flex items-center justify-between">
           <div>
-            <h2 className="text-xl font-bold text-text">Import Transactions</h2>
-            <p className="text-xs text-muted">Step {step} of 4</p>
+            <h2 className="text-xl font-bold text-text">Import giao dịch</h2>
+            <p className="text-xs text-muted">Bước {step} / 4</p>
           </div>
           <button onClick={onClose} className="text-muted transition-colors hover:text-text">
-            &times; Close
+            &times; Đóng
           </button>
         </div>
 
         {step === 1 ? (
           <section className="rounded-xl border border-border bg-bg p-4">
-            <p className="mb-3 text-sm font-semibold text-text">Step 1: Choose file</p>
+            <p className="mb-3 text-sm font-semibold text-text">Bước 1: Chọn tệp</p>
             <input
               type="file"
               accept=".csv,.xlsx,.xls,.xlsm"
@@ -185,7 +185,7 @@ export function ImportTransactionsModal({ isOpen, onClose, onImported }: Props) 
                 disabled={!selectedFile}
                 className="focus-ring rounded-xl bg-primary px-4 py-2 text-sm font-bold text-bg transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Continue
+                Tiếp tục
               </button>
             </div>
           </section>
@@ -193,13 +193,13 @@ export function ImportTransactionsModal({ isOpen, onClose, onImported }: Props) 
 
         {step === 2 ? (
           <section className="rounded-xl border border-border bg-bg p-4">
-            <p className="mb-3 text-sm font-semibold text-text">Step 2: Choose bank/account</p>
+            <p className="mb-3 text-sm font-semibold text-text">Bước 2: Chọn ngân hàng/tài khoản</p>
             <select
               value={accountId}
               onChange={(event) => setAccountId(Number(event.target.value))}
               className="focus-ring w-full rounded-xl border border-border bg-surface px-3 py-2 text-sm text-text"
             >
-              <option value={0}>Select account</option>
+              <option value={0}>Chọn tài khoản</option>
               {(accountsQuery.data || []).map((row) => (
                 <option key={row.AccountID} value={row.AccountID}>
                   {row.BankCode} - {row.BankName}
@@ -212,7 +212,7 @@ export function ImportTransactionsModal({ isOpen, onClose, onImported }: Props) 
                 onClick={() => setStep(1)}
                 className="focus-ring rounded-xl border border-border px-4 py-2 text-sm font-semibold text-text hover:bg-surface-hover"
               >
-                Back
+                Quay lại
               </button>
               <button
                 type="button"
@@ -220,7 +220,7 @@ export function ImportTransactionsModal({ isOpen, onClose, onImported }: Props) 
                 disabled={previewMutation.isPending || !accountId}
                 className="focus-ring rounded-xl bg-primary px-4 py-2 text-sm font-bold text-bg transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {previewMutation.isPending ? "Preparing preview..." : "Preview"}
+                {previewMutation.isPending ? "Đang chuẩn bị xem trước..." : "Xem trước"}
               </button>
             </div>
           </section>
@@ -230,22 +230,22 @@ export function ImportTransactionsModal({ isOpen, onClose, onImported }: Props) 
           <section className="rounded-xl border border-border bg-bg p-4">
             <div className="mb-3 flex items-center justify-between">
               <p className="text-sm font-semibold text-text">
-                Step 3: Review preview ({preview.total_rows} rows)
+                Bước 3: Kiểm tra bản xem trước ({preview.total_rows} dòng)
               </p>
-              <span className="text-xs text-muted">Batch #{preview.batch_id}</span>
+              <span className="text-xs text-muted">Lô #{preview.batch_id}</span>
             </div>
 
             <div className="max-h-[420px] overflow-auto">
               <table className="min-w-full border-collapse text-sm">
                 <thead>
                   <tr>
-                    <th className="border-b border-border px-3 py-3 text-left font-medium text-muted">Date</th>
-                    <th className="border-b border-border px-3 py-3 text-left font-medium text-muted">Description</th>
-                    <th className="border-b border-border px-3 py-3 text-left font-medium text-muted">Type</th>
-                    <th className="border-b border-border px-3 py-3 text-right font-medium text-muted">Amount</th>
-                    <th className="border-b border-border px-3 py-3 text-left font-medium text-muted">Category</th>
-                    <th className="border-b border-border px-3 py-3 text-left font-medium text-muted">Duplicate</th>
-                    <th className="border-b border-border px-3 py-3 text-left font-medium text-muted">Action</th>
+                    <th className="border-b border-border px-3 py-3 text-left font-medium text-muted">Ngày</th>
+                    <th className="border-b border-border px-3 py-3 text-left font-medium text-muted">Mô tả</th>
+                    <th className="border-b border-border px-3 py-3 text-left font-medium text-muted">Loại</th>
+                    <th className="border-b border-border px-3 py-3 text-right font-medium text-muted">Số tiền</th>
+                    <th className="border-b border-border px-3 py-3 text-left font-medium text-muted">Danh mục</th>
+                    <th className="border-b border-border px-3 py-3 text-left font-medium text-muted">Trùng lặp</th>
+                    <th className="border-b border-border px-3 py-3 text-left font-medium text-muted">Hành động</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -287,7 +287,7 @@ export function ImportTransactionsModal({ isOpen, onClose, onImported }: Props) 
                               }
                               className="focus-ring w-44 rounded-lg border border-border bg-surface px-2 py-1 text-sm"
                             >
-                              <option value={0}>Select category</option>
+                              <option value={0}>Chọn danh mục</option>
                               {(categoriesQuery.data || []).map((category) => (
                                 <option key={category.CategoryID} value={category.CategoryID}>
                                   {category.CategoryName}
@@ -295,16 +295,16 @@ export function ImportTransactionsModal({ isOpen, onClose, onImported }: Props) 
                               ))}
                             </select>
                           ) : (
-                            <span className="text-muted">Not required</span>
+                            <span className="text-muted">Không bắt buộc</span>
                           )}
                         </td>
                         <td className="border-b border-border px-3 py-3 text-text">
                           {row.is_duplicate ? (
                             <span className="rounded-full border border-primary/40 bg-primary/10 px-2 py-1 text-xs font-semibold text-primary">
-                              Yes
+                              Có
                             </span>
                           ) : (
-                            <span className="text-muted">No</span>
+                            <span className="text-muted">Không</span>
                           )}
                         </td>
                         <td className="border-b border-border px-3 py-3 text-text">
@@ -322,8 +322,8 @@ export function ImportTransactionsModal({ isOpen, onClose, onImported }: Props) 
                             }
                             className="focus-ring rounded-lg border border-border bg-surface px-2 py-1 text-sm"
                           >
-                            <option value="IMPORT">Import</option>
-                            <option value="SKIP">Skip</option>
+                            <option value="IMPORT">Nhập</option>
+                            <option value="SKIP">Bỏ qua</option>
                           </select>
                         </td>
                       </tr>
@@ -339,7 +339,7 @@ export function ImportTransactionsModal({ isOpen, onClose, onImported }: Props) 
                 onClick={() => setStep(2)}
                 className="focus-ring rounded-xl border border-border px-4 py-2 text-sm font-semibold text-text hover:bg-surface-hover"
               >
-                Back
+                Quay lại
               </button>
               <button
                 type="button"
@@ -347,7 +347,7 @@ export function ImportTransactionsModal({ isOpen, onClose, onImported }: Props) 
                 disabled={confirmMutation.isPending}
                 className="focus-ring rounded-xl bg-success px-4 py-2 text-sm font-bold text-bg transition-colors hover:bg-success/90 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {confirmMutation.isPending ? "Importing..." : "Confirm Import"}
+                {confirmMutation.isPending ? "Đang nhập..." : "Xác nhận import"}
               </button>
             </div>
           </section>
@@ -355,9 +355,9 @@ export function ImportTransactionsModal({ isOpen, onClose, onImported }: Props) 
 
         {step === 4 && confirmSummary ? (
           <section className="rounded-xl border border-border bg-bg p-4">
-            <p className="text-sm font-semibold text-text">Step 4: Import completed</p>
+            <p className="text-sm font-semibold text-text">Bước 4: Hoàn tất import</p>
             <p className="mt-2 text-sm text-muted">
-              Imported: {confirmSummary.imported_rows} | Skipped: {confirmSummary.skipped_rows} | Failed:{" "}
+              Đã nhập: {confirmSummary.imported_rows} | Đã bỏ qua: {confirmSummary.skipped_rows} | Thất bại:{" "}
               {confirmSummary.failed_rows}
             </p>
             <div className="mt-4 flex items-center justify-end gap-3">
@@ -366,7 +366,7 @@ export function ImportTransactionsModal({ isOpen, onClose, onImported }: Props) 
                 onClick={onClose}
                 className="focus-ring rounded-xl border border-border px-4 py-2 text-sm font-semibold text-text hover:bg-surface-hover"
               >
-                Close
+                Đóng
               </button>
             </div>
           </section>

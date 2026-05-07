@@ -16,5 +16,11 @@ fi
 export MYSQL_PWD="$DB_PASSWORD"
 
 echo "Applying updated views.sql to ${DB_NAME} on ${DB_HOST}:${DB_PORT}..."
-mysql --protocol=tcp -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" "$DB_NAME" < "$VIEWS_FILE"
+mysql \
+  --protocol=tcp \
+  --default-character-set=utf8mb4 \
+  -h "$DB_HOST" \
+  -P "$DB_PORT" \
+  -u "$DB_USER" \
+  "$DB_NAME" < "$VIEWS_FILE"
 echo "Views applied successfully."

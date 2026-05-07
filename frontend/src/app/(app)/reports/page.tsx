@@ -19,11 +19,10 @@ import { SankeyCashFlow } from "@/components/finance/sankey-cash-flow";
 import { AppShell } from "@/components/layout/app-shell";
 import {
   extractApiErrorMessage,
-  getDailySummary,
   getMetaAccounts,
   getTransactions,
 } from "@/lib/api-client";
-import { formatCurrency, formatDate, formatDateTime } from "@/lib/format";
+import { formatCurrency, formatDateTime } from "@/lib/format";
 import { useAuth } from "@/providers/auth-provider";
 import { useUserScope } from "@/providers/user-scope-provider";
 import type { TransactionRecord } from "@/types/api";
@@ -92,7 +91,7 @@ function getDisplayName(user?: { UserName?: string | null; Email?: string | null
     return emailName;
   }
 
-  return "your account";
+  return "tài khoản của bạn";
 }
 
 function formatPercent(value: number): string {
@@ -114,22 +113,9 @@ export default function ReportsPage() {
   const [selectedMonth, setSelectedMonth] = useState("");
 
   const now = new Date();
-  const prev = new Date();
-  prev.setDate(now.getDate() - 30);
-  const [startDate, setStartDate] = useState(toIsoDate(prev));
+  // Mốc đầu luôn cố định: ngày 1 của tháng hiện tại
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const [endDate, setEndDate] = useState(toIsoDate(now));
-  const [dateRangeInitialized, setDateRangeInitialized] = useState(false);
-
-  const dailyQuery = useQuery({
-    queryKey: ["daily-summary", userId, startDate, endDate],
-    queryFn: () =>
-      getDailySummary({
-        user_id: userId,
-        start_date: startDate,
-        end_date: endDate
-      }),
-    enabled: Boolean(userId)
-  });
 
   const transactionsQuery = useQuery({
     queryKey: ["transactions", userId],
@@ -164,37 +150,26 @@ export default function ReportsPage() {
     }
   }, [monthOptions, selectedMonth]);
 
-  useEffect(() => {
-    if (dateRangeInitialized) {
-      return;
-    }
+  // monthStart và currentMonthLabel tự động theo endDate (không cứng theo tháng hiện tại)
+  const sankeyMonthStart = useMemo(() => {
+    const end = new Date(endDate);
+    return new Date(end.getFullYear(), end.getMonth(), 1);
+  }, [endDate]);
 
-    const transactions = transactionsQuery.data || [];
-    if (transactions.length === 0) {
-      return;
-    }
-
-    const timestamps = transactions
-      .map((row) => new Date(row.TransactionDate).getTime())
-      .filter((value) => Number.isFinite(value));
-    if (timestamps.length === 0) {
-      return;
-    }
-
-    const maxTimestamp = Math.max(...timestamps);
-    const autoEnd = new Date(maxTimestamp);
-    const autoStart = new Date(maxTimestamp);
-    autoStart.setDate(autoStart.getDate() - 30);
-
-    setStartDate(toIsoDate(autoStart));
-    setEndDate(toIsoDate(autoEnd));
-    setDateRangeInitialized(true);
-  }, [transactionsQuery.data, dateRangeInitialized]);
+  const currentMonthLabel = useMemo(() => {
+    const end = new Date(endDate);
+    return `Tháng ${end.getMonth() + 1}/${end.getFullYear()}`;
+  }, [endDate]);
 
   const sankeyData = useMemo(() => {
     const txs = (transactionsQuery.data || []) as TransactionWithCategory[];
+    const accounts = accountsQuery.data || [];
 
-    const start = new Date(startDate);
+    // Tổng số dư hiện tại của tất cả tài khoản
+    const totalBalance = accounts.reduce((sum, acc) => sum + Number(acc.Balance || 0), 0);
+
+    // Luôn tính từ ngày 1 của tháng ứng với endDate (auto-derived)
+    const start = sankeyMonthStart;
     const end = new Date(endDate);
     end.setHours(23, 59, 59, 999);
 
@@ -212,7 +187,7 @@ export default function ReportsPage() {
         totalIncome += Number(transaction.Amount);
       } else if (transaction.TransactionType === "EXPENSE") {
         totalExpense += Number(transaction.Amount);
-        const categoryName = transaction.CategoryName || "Uncategorized";
+        const categoryName = transaction.CategoryName || "Chưa phân loại";
         categoryMap.set(
           categoryName,
           (categoryMap.get(categoryName) || 0) + Number(transaction.Amount)
@@ -220,31 +195,72 @@ export default function ReportsPage() {
       }
     });
 
-    const savings = Math.max(0, totalIncome - totalExpense);
+    const hasIncome = totalIncome > 0;
+    const hasExpense = categoryMap.size > 0;
 
-    const nodes = [
-      { name: "Total Income", color: "#06B6D4" },
-      { name: "Savings", color: "#10B981" }
+    if (!hasExpense && !hasIncome) {
+      return { nodes: [], links: [] };
+    }
+
+    /**
+     * Luồng dữ liệu:
+     *  Trường hợp có income:
+     *    Node 0: Tổng số dư → Node 1: Thu nhập → Node 2+: các danh mục chi tiêu
+     *    Nếu income > totalExpense: thêm node "Còn lại" nhận phần dư từ Thu nhập
+     *
+     *  Trường hợp không có income:
+     *    Node 0: Tổng số dư → Node 1+: các danh mục chi tiêu trực tiếp
+     */
+    const nodes: { name: string; color: string; displayValue?: number }[] = [
+      { name: "Tổng số dư", color: "#06B6D4", displayValue: totalBalance },
     ];
 
     const links: { source: number; target: number; value: number }[] = [];
 
-    if (totalIncome > 0) {
-      links.push({ source: 0, target: 1, value: savings });
+    if (hasIncome) {
+      // Node 1: Thu nhập
+      nodes.push({ name: `Thu nhập ${currentMonthLabel}`, color: "#10B981" });
+      // Tổng số dư → Thu nhập
+      links.push({ source: 0, target: 1, value: totalIncome });
 
-      let index = 0;
+      const remainder = totalIncome - totalExpense;
+      let expenseStartIndex = 2;
+
+      if (remainder > 0) {
+        // Node 2: Còn lại (phần income chưa chi)
+        nodes.push({ name: "Còn lại", color: "#8B5CF6" });
+        links.push({ source: 1, target: 2, value: remainder });
+        expenseStartIndex = 3;
+      }
+
+      let idx = 0;
       categoryMap.forEach((spent, categoryName) => {
         nodes.push({
           name: categoryName,
-          color: CATEGORY_COLORS[index % CATEGORY_COLORS.length]
+          color: CATEGORY_COLORS[idx % CATEGORY_COLORS.length],
         });
-        links.push({ source: 0, target: index + 2, value: spent });
-        index += 1;
+        // Thu nhập → expense category (capped at min(spent, income) để tránh vượt flow)
+        const flowValue = Math.min(spent, totalIncome);
+        links.push({ source: 1, target: expenseStartIndex + idx, value: flowValue });
+        idx += 1;
+      });
+    } else {
+      // Không có income → Tổng số dư → chi tiêu trực tiếp
+      let idx = 0;
+      categoryMap.forEach((spent, categoryName) => {
+        nodes.push({
+          name: categoryName,
+          color: CATEGORY_COLORS[idx % CATEGORY_COLORS.length],
+        });
+        links.push({ source: 0, target: idx + 1, value: spent });
+        idx += 1;
       });
     }
 
     return { nodes, links };
-  }, [transactionsQuery.data, startDate, endDate]);
+  }, [transactionsQuery.data, accountsQuery.data, endDate, sankeyMonthStart]);
+
+
 
   const selectedMonthTransactions = useMemo(() => {
     const txs = (transactionsQuery.data || []) as TransactionWithCategory[];
@@ -273,7 +289,7 @@ export default function ReportsPage() {
       .map(([accountId, total]) => {
         const account = accounts.find((item) => item.AccountID === accountId);
         return {
-          AccountName: account?.BankName || "Unknown source",
+          AccountName: account?.BankName || "Nguồn chưa rõ",
           TotalIncome: total
         };
       })
@@ -287,7 +303,7 @@ export default function ReportsPage() {
     const map = new Map<string, SpendingCategoryPoint>();
 
     expenses.forEach((transaction) => {
-      const categoryName = transaction.CategoryName || "Uncategorized";
+      const categoryName = transaction.CategoryName || "Chưa phân loại";
       const categoryKey =
         transaction.CategoryID !== null && transaction.CategoryID !== undefined
           ? String(transaction.CategoryID)
@@ -315,9 +331,9 @@ export default function ReportsPage() {
 
   const incomeSourceRows = useMemo(() => {
     return incomeData.map((row) => ({
-      Source: row.AccountName,
-      "Total income": formatCurrency(row.TotalIncome),
-      Share: incomeTotal > 0 ? formatPercent((row.TotalIncome / incomeTotal) * 100) : "0.0%"
+      "Nguồn thu": row.AccountName,
+      "Tổng thu nhập": formatCurrency(row.TotalIncome),
+      "Tỷ trọng": incomeTotal > 0 ? formatPercent((row.TotalIncome / incomeTotal) * 100) : "0.0%"
     }));
   }, [incomeData, incomeTotal]);
 
@@ -335,10 +351,10 @@ export default function ReportsPage() {
         );
 
         return {
-          Date: formatDateTime(row.TransactionDate),
-          Source: account?.BankName || "Unknown source",
-          Amount: formatCurrency(row.Amount),
-          Note: row.Description || ""
+          "Ngày": formatDateTime(row.TransactionDate),
+          "Nguồn thu": account?.BankName || "Nguồn chưa rõ",
+          "Số tiền": formatCurrency(row.Amount),
+          "Ghi chú": row.Description || ""
         };
       });
   }, [selectedMonthTransactions, accountsQuery.data]);
@@ -346,10 +362,10 @@ export default function ReportsPage() {
   const categorySummaryRows = useMemo(() => {
     const total = spendingData.reduce((sum, row) => sum + Number(row.TotalSpent || 0), 0);
     return spendingData.map((row) => ({
-      Category: row.CategoryName,
-      "Total spent": formatCurrency(row.TotalSpent),
-      Share: total > 0 ? formatPercent((Number(row.TotalSpent) / total) * 100) : "0.0%",
-      "Transactions": row.TotalTransactions
+      "Danh mục": row.CategoryName,
+      "Tổng chi": formatCurrency(row.TotalSpent),
+      "Tỷ trọng": total > 0 ? formatPercent((Number(row.TotalSpent) / total) * 100) : "0.0%",
+      "Số giao dịch": row.TotalTransactions
     }));
   }, [spendingData]);
 
@@ -367,22 +383,22 @@ export default function ReportsPage() {
         );
 
         return {
-          Date: formatDateTime(row.TransactionDate),
-          Account: row.BankName || account?.BankName || "Unknown account",
-          Category: row.CategoryName || "Uncategorized",
-          Amount: formatCurrency(row.Amount),
-          Description: row.Description || ""
+          "Ngày": formatDateTime(row.TransactionDate),
+          "Tài khoản": row.BankName || account?.BankName || "Tài khoản chưa rõ",
+          "Danh mục": row.CategoryName || "Chưa phân loại",
+          "Số tiền": formatCurrency(row.Amount),
+          "Mô tả": row.Description || ""
         };
       });
   }, [selectedMonthTransactions, accountsQuery.data]);
 
-  const selectedMonthLabel = selectedMonth ? formatMonthLabel(selectedMonth) : "Latest month";
+  const selectedMonthLabel = selectedMonth ? formatMonthLabel(selectedMonth) : "Tháng gần nhất";
 
-  const cashFlowLoading = transactionsQuery.isLoading || dailyQuery.isLoading;
+  const cashFlowLoading = transactionsQuery.isLoading || accountsQuery.isLoading;
   const spendingLoading = transactionsQuery.isLoading || accountsQuery.isLoading;
   const incomeLoading = transactionsQuery.isLoading || accountsQuery.isLoading;
 
-  const cashFlowError = transactionsQuery.error || dailyQuery.error;
+  const cashFlowError = transactionsQuery.error || accountsQuery.error;
   const spendingError = transactionsQuery.error || accountsQuery.error;
   const incomeError = transactionsQuery.error || accountsQuery.error;
 
@@ -403,24 +419,19 @@ export default function ReportsPage() {
   return (
     <AuthGuard>
       <AppShell
-        title="Reports"
-        subtitle={`Clear money insights for ${displayName}`}
+        title="Báo cáo"
+        subtitle={`Góc nhìn tài chính rõ ràng cho ${displayName}`}
       >
-        {activeLoading ? <LoadingSkeleton label="Loading reports..." /> : null}
+        {activeLoading ? <LoadingSkeleton label="Đang tải báo cáo..." /> : null}
 
         {activeError ? (
           <ErrorState
-            title="Unable to load report data"
+            title="Không thể tải dữ liệu báo cáo"
             detail={extractApiErrorMessage(
               activeError,
-              "Failed to load report data."
+              "Không thể tải dữ liệu báo cáo."
             )}
             onRetry={() => {
-              if (activeTab === "cash-flow") {
-                transactionsQuery.refetch();
-                dailyQuery.refetch();
-                return;
-              }
               transactionsQuery.refetch();
               accountsQuery.refetch();
             }}
@@ -433,41 +444,32 @@ export default function ReportsPage() {
               active={activeTab === "cash-flow"}
               onClick={() => setActiveTab("cash-flow")}
             >
-              Cash Flow
+              Dòng tiền
             </TabButton>
             <TabButton
               active={activeTab === "spending"}
               onClick={() => setActiveTab("spending")}
             >
-              Spending
+              Chi tiêu
             </TabButton>
             <TabButton
               active={activeTab === "income"}
               onClick={() => setActiveTab("income")}
             >
-              Income
+              Thu nhập
             </TabButton>
           </nav>
 
           {activeTab === "cash-flow" ? (
-            <div className="mb-2 flex items-center space-x-3">
-              <input
-                type="date"
-                value={startDate}
-                onChange={(event) => {
-                  setDateRangeInitialized(true);
-                  setStartDate(event.target.value);
-                }}
-                className="focus-ring rounded-md border border-border bg-surface px-3 py-1.5 text-sm"
-              />
-              <span className="text-sm text-muted">to</span>
+            <div className="mb-2 flex items-center gap-2">
+              <span className="text-sm text-muted">
+                Từ đầu {currentMonthLabel} đến
+              </span>
               <input
                 type="date"
                 value={endDate}
-                onChange={(event) => {
-                  setDateRangeInitialized(true);
-                  setEndDate(event.target.value);
-                }}
+                max={toIsoDate(now)}
+                onChange={(event) => setEndDate(event.target.value)}
                 className="focus-ring rounded-md border border-border bg-surface px-3 py-1.5 text-sm"
               />
             </div>
@@ -475,7 +477,7 @@ export default function ReportsPage() {
 
           {activeTab !== "cash-flow" ? (
             <div className="mb-2 flex items-center gap-2">
-              <label className="text-sm font-semibold text-muted">Month</label>
+              <label className="text-sm font-semibold text-muted">Tháng</label>
               <select
                 className="focus-ring rounded-md border border-border bg-surface px-3 py-1.5 text-sm font-medium text-text"
                 value={selectedMonth}
@@ -483,7 +485,7 @@ export default function ReportsPage() {
                 disabled={monthOptions.length === 0}
               >
                 {monthOptions.length === 0 ? (
-                  <option value="">No transaction month</option>
+                  <option value="">Chưa có tháng giao dịch</option>
                 ) : null}
                 {monthOptions.map((monthKey) => (
                   <option key={monthKey} value={monthKey}>
@@ -497,17 +499,7 @@ export default function ReportsPage() {
 
         <div className="grid gap-6">
           {activeTab === "cash-flow" && !activeError ? (
-            <>
-              <SankeyCashFlow data={sankeyData} />
-              <ChartPanel
-                data={(dailyQuery.data || []).map((row) => ({
-                  YearMonth: formatDate(row.SummaryDate),
-                  MonthlyIncome: row.DailyIncome,
-                  MonthlyExpense: row.DailyExpense,
-                  NetSaving: row.NetSaving
-                }))}
-              />
-            </>
+            <SankeyCashFlow data={sankeyData} />
           ) : null}
 
           {activeTab === "spending" && !activeError ? (
@@ -517,14 +509,14 @@ export default function ReportsPage() {
                 monthLabel={selectedMonthLabel}
               />
               <DataTable
-                title={`Summary - ${selectedMonthLabel}`}
+                title={`Tổng hợp - ${selectedMonthLabel}`}
                 rows={categorySummaryRows}
-                emptyMessage="No spending data found."
+                emptyMessage="Không có dữ liệu chi tiêu."
               />
               <DataTable
-                title={`Spending Transactions - ${selectedMonthLabel}`}
+                title={`Giao dịch chi tiêu - ${selectedMonthLabel}`}
                 rows={spendingTransactionsRows}
-                emptyMessage="No spending transactions found."
+                emptyMessage="Không có giao dịch chi tiêu."
               />
             </>
           ) : null}
@@ -533,14 +525,14 @@ export default function ReportsPage() {
             <>
               <IncomeBySourceCard data={incomeData} monthLabel={selectedMonthLabel} />
               <DataTable
-                title={`Summary - ${selectedMonthLabel}`}
+                title={`Tổng hợp - ${selectedMonthLabel}`}
                 rows={incomeSourceRows}
-                emptyMessage="No income source data found."
+                emptyMessage="Không có dữ liệu nguồn thu nhập."
               />
               <DataTable
-                title={`Income Transactions - ${selectedMonthLabel}`}
+                title={`Giao dịch thu nhập - ${selectedMonthLabel}`}
                 rows={incomeTransactionsTable}
-                emptyMessage="No income transactions found."
+                emptyMessage="Không có giao dịch thu nhập."
               />
             </>
           ) : null}
@@ -588,29 +580,29 @@ function IncomeBySourceCard({
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <p className="text-[11px] font-black uppercase tracking-[0.14em] text-muted">
-            Income by Source
+            Thu nhập theo nguồn
           </p>
           <h2 className="mt-1 text-xl font-black text-text">
-            Your income distribution
+            Phân bổ nguồn thu nhập
           </h2>
           <p className="mt-1 text-sm text-muted">
-            See which sources contributed income in {monthLabel}.
+            Xem từng nguồn đã đóng góp thu nhập trong {monthLabel}.
           </p>
         </div>
 
         <div className="flex flex-wrap gap-2">
           <button className="rounded-xl border border-border bg-bg px-3 py-2 text-xs font-bold text-text">
-            By source
+            Theo nguồn
           </button>
           <button className="rounded-xl border border-border bg-bg px-3 py-2 text-xs font-bold text-text">
-            Total amounts
+            Tổng số tiền
           </button>
         </div>
       </div>
 
       {sortedData.length === 0 ? (
         <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-border bg-bg/50">
-          <p className="text-sm text-muted">No income sources to show.</p>
+          <p className="text-sm text-muted">Không có nguồn thu nhập để hiển thị.</p>
         </div>
       ) : (
         <div className="grid gap-8 lg:grid-cols-[320px_minmax(0,1fr)]">
@@ -649,7 +641,7 @@ function IncomeBySourceCard({
               <p className="font-mono text-xl font-black text-text">
                 {formatCurrency(total)}
               </p>
-              <p className="mt-1 text-xs font-semibold text-muted">Total</p>
+              <p className="mt-1 text-xs font-semibold text-muted">Tổng</p>
             </div>
           </div>
 
@@ -701,29 +693,29 @@ function SpendingByCategoryCard({
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <p className="text-[11px] font-black uppercase tracking-[0.14em] text-muted">
-            Spending by Category
+            Chi tiêu theo danh mục
           </p>
           <h2 className="mt-1 text-xl font-black text-text">
-            Your category breakdown
+            Phân rã chi tiêu theo danh mục
           </h2>
           <p className="mt-1 text-sm text-muted">
-            See where your money went in {monthLabel}, grouped by category.
+            Xem tiền đã đi vào đâu trong {monthLabel}, nhóm theo từng danh mục.
           </p>
         </div>
 
         <div className="flex flex-wrap gap-2">
           <button className="rounded-xl border border-border bg-bg px-3 py-2 text-xs font-bold text-text">
-            By category
+            Theo danh mục
           </button>
           <button className="rounded-xl border border-border bg-bg px-3 py-2 text-xs font-bold text-text">
-            Total amounts
+            Tổng số tiền
           </button>
         </div>
       </div>
 
       {sortedData.length === 0 ? (
         <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-border bg-bg/50">
-          <p className="text-sm text-muted">No spending categories to show.</p>
+          <p className="text-sm text-muted">Không có danh mục chi tiêu để hiển thị.</p>
         </div>
       ) : (
         <div className="grid gap-8 lg:grid-cols-[320px_minmax(0,1fr)]">
@@ -762,7 +754,7 @@ function SpendingByCategoryCard({
               <p className="font-mono text-xl font-black text-text">
                 {formatCurrency(total)}
               </p>
-              <p className="mt-1 text-xs font-semibold text-muted">Total</p>
+              <p className="mt-1 text-xs font-semibold text-muted">Tổng</p>
             </div>
           </div>
 

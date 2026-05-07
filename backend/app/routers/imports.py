@@ -87,20 +87,20 @@ def _decode_csv_bytes(payload: bytes) -> str:
             return payload.decode(encoding)
         except UnicodeDecodeError:
             continue
-    raise ValueError("Cannot decode CSV file. Please use UTF-8 encoded CSV.")
+    raise ValueError("Không thể đọc file CSV. Vui lòng dùng file mã hóa UTF-8.")
 
 
 def _read_csv_rows(payload: bytes) -> list[dict[str, Any]]:
     text = _decode_csv_bytes(payload)
     reader = csv.DictReader(io.StringIO(text))
     if not reader.fieldnames:
-        raise ValueError("CSV file must include a header row.")
+        raise ValueError("File CSV phải có dòng tiêu đề (header).")
     return [dict(row) for row in reader]
 
 
 def _read_excel_rows(payload: bytes) -> list[dict[str, Any]]:
     if load_workbook is None:
-        raise ValueError("Excel import requires dependency `openpyxl`.")
+        raise ValueError("Tính năng nhập Excel cần cài thêm thư viện `openpyxl`.")
 
     workbook = load_workbook(filename=io.BytesIO(payload), read_only=True, data_only=True)
     sheet = workbook.active
@@ -244,9 +244,9 @@ def _parse_type_and_amount(
 
     error_message = None
     if parsed_date is None:
-        error_message = "Cannot parse transaction date."
+        error_message = "Không thể phân tích ngày giao dịch."
     elif parsed_type is None or parsed_amount is None or parsed_amount <= 0:
-        error_message = "Cannot infer transaction type/amount."
+        error_message = "Không thể suy luận loại giao dịch hoặc số tiền."
 
     return {
         "raw_date": str(raw_date).strip() if raw_date is not None else None,
@@ -369,9 +369,9 @@ def _resolve_target_user_id(ctx: AuthContext, requested_user_id: Optional[int]) 
     if requested == auth_user_id:
         return requested
     if role != "ADMIN":
-        raise ValueError("Access denied. You can only import for your own account.")
+        raise ValueError("Bạn chỉ có thể nhập dữ liệu cho tài khoản của chính mình.")
     if not ctx.service.get_user_by_id(requested):
-        raise ValueError(f"UserID {requested} does not exist.")
+        raise ValueError(f"Không tồn tại người dùng có mã {requested}.")
     return requested
 
 
@@ -381,7 +381,7 @@ def _load_raw_rows(file_name: str, payload: bytes) -> tuple[list[dict[str, Any]]
         return _read_csv_rows(payload), "CSV"
     if lower_name.endswith(".xlsx") or lower_name.endswith(".xlsm") or lower_name.endswith(".xls"):
         return _read_excel_rows(payload), "EXCEL"
-    raise ValueError("Unsupported file type. Please upload CSV or Excel file.")
+    raise ValueError("Định dạng file chưa được hỗ trợ. Vui lòng tải lên CSV hoặc Excel.")
 
 
 @router.post("/transactions/preview", response_model=ImportPreviewResponse)
@@ -395,13 +395,13 @@ async def preview_transactions_import(
         target_user_id = _resolve_target_user_id(ctx, user_id)
         if not ctx.service.account_belongs_to_user(target_user_id, account_id):
             raise ValueError(
-                f"AccountID {account_id} does not belong to UserID {target_user_id}."
+                f"Tài khoản {account_id} không thuộc người dùng {target_user_id}."
             )
 
         payload = await file.read()
         raw_rows, file_type = _load_raw_rows(file.filename or "", payload)
         if not raw_rows:
-            raise ValueError("Import file has no data rows.")
+            raise ValueError("File nhập không có dòng dữ liệu.")
 
         header_map = _build_header_map(raw_rows[0].keys())
         date_col = _find_column(header_map, HEADER_ALIASES["date"])
@@ -412,11 +412,11 @@ async def preview_transactions_import(
         credit_col = _find_column(header_map, HEADER_ALIASES["credit"])
 
         if not date_col:
-            raise ValueError("Cannot find date column in file.")
+            raise ValueError("Không tìm thấy cột ngày giao dịch trong file.")
         if not desc_col:
-            raise ValueError("Cannot find description/note column in file.")
+            raise ValueError("Không tìm thấy cột mô tả/nội dung trong file.")
         if not amount_col and not (debit_col or credit_col):
-            raise ValueError("Cannot find amount/debit/credit columns in file.")
+            raise ValueError("Không tìm thấy cột số tiền hoặc ghi nợ/ghi có trong file.")
 
         categories = ctx.service.list_categories()
         category_name_map = _build_category_name_map(categories)
@@ -491,7 +491,7 @@ async def preview_transactions_import(
                 action = "SKIP" if is_duplicate else "IMPORT"
                 error_message = parsed["error_message"]
                 if is_duplicate and not error_message:
-                    error_message = "Possible duplicate transaction."
+                    error_message = "Có khả năng trùng giao dịch."
                 if parsed["parsed_type"] is None or parsed["parsed_amount"] is None:
                     action = "SKIP"
 
@@ -593,9 +593,9 @@ def confirm_transactions_import(
             )
             batch = cursor.fetchone()
             if not batch:
-                raise ValueError(f"Import batch {payload.batch_id} does not exist.")
+                raise ValueError(f"Không tồn tại lô nhập có mã {payload.batch_id}.")
             if int(batch["UserID"]) != target_user_id:
-                raise ValueError("Import batch does not belong to selected user scope.")
+                raise ValueError("Lô nhập không thuộc phạm vi người dùng đang chọn.")
 
             for row_update in payload.rows:
                 action = (row_update.action or "IMPORT").strip().upper()
@@ -606,7 +606,7 @@ def confirm_transactions_import(
                     and int(row_update.final_category_id) not in valid_category_ids
                 ):
                     raise ValueError(
-                        f"CategoryID {row_update.final_category_id} does not exist."
+                        f"Không tồn tại danh mục có mã {row_update.final_category_id}."
                     )
                 cursor.execute(
                     """
@@ -660,7 +660,7 @@ def confirm_transactions_import(
 
                 if int(row.get("IsDuplicate") or 0) == 1:
                     action = "SKIP"
-                    error_message = "Skipped duplicate row."
+                    error_message = "Đã bỏ qua dòng bị trùng."
 
                 if action != "IMPORT":
                     skipped_rows += 1
@@ -681,7 +681,7 @@ def confirm_transactions_import(
                         """
                         UPDATE TransactionImportRows
                         SET RowStatus = 'FAILED',
-                            ErrorMessage = 'Missing parsed date/type/amount.'
+                            ErrorMessage = 'Thiếu dữ liệu ngày, loại giao dịch hoặc số tiền sau khi phân tích.'
                         WHERE RowID = %s
                         """,
                         (row_id,),
@@ -701,7 +701,7 @@ def confirm_transactions_import(
                     else:
                         category_id = row.get("FinalCategoryID") or row.get("SuggestedCategoryID")
                         if category_id is None:
-                            raise ValueError("Missing category for expense row.")
+                            raise ValueError("Thiếu danh mục cho dòng chi tiêu.")
                         ctx.service.create_expense(
                             user_id=target_user_id,
                             account_id=account_id,
@@ -756,7 +756,7 @@ def confirm_transactions_import(
             cursor.close()
 
         return ImportConfirmResponse(
-            message="Transaction import completed.",
+            message="Nhập giao dịch hoàn tất.",
             batch_id=payload.batch_id,
             imported_rows=imported_rows,
             skipped_rows=skipped_rows,

@@ -10,11 +10,11 @@ import { z } from "zod";
 import { extractApiErrorMessage, getMetaBanks, signup } from "@/lib/api-client";
 
 const schema = z.object({
-  user_name: z.string().min(1, "User name is required."),
-  email: z.string().email("Email is invalid."),
+  user_name: z.string().min(1, "Vui lòng nhập tên người dùng."),
+  email: z.string().email("Email không hợp lệ."),
   phone_number: z.string().optional(),
-  bank_id: z.number({ invalid_type_error: "Please select a bank." }),
-  password: z.string().min(1, "Password is required."),
+  bank_id: z.number({ invalid_type_error: "Vui lòng chọn ngân hàng." }),
+  password: z.string().min(1, "Vui lòng nhập mật khẩu."),
   recovery_hint: z.string().optional(),
   recovery_answer: z.string().optional()
 });
@@ -59,22 +59,22 @@ export default function SignupPage() {
         recovery_hint: values.recovery_hint?.trim() || null,
         recovery_answer: values.recovery_answer?.trim() || null
       });
-      alert("Sign up successful. Please sign in.");
+      alert("Đăng ký thành công. Vui lòng đăng nhập.");
       router.push("/login");
     } catch (error) {
-      alert(extractApiErrorMessage(error, "Sign up failed."));
+      alert(extractApiErrorMessage(error, "Đăng ký thất bại."));
     }
   });
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-2xl items-center justify-center p-6">
       <section className="w-full rounded-lg border border-border bg-surface p-8">
-        <h1 className="text-3xl font-semibold text-text">Create Account</h1>
-        <p className="mt-2 text-sm text-muted">Create a new USER account and choose your bank.</p>
+        <h1 className="text-3xl font-semibold text-text">Tạo tài khoản</h1>
+        <p className="mt-2 text-sm text-muted">Tạo tài khoản người dùng mới và chọn ngân hàng.</p>
 
         <form onSubmit={onSubmit} className="mt-5 grid gap-4">
           <label className="block">
-            <span className="mb-1 block text-sm text-muted">User name</span>
+            <span className="mb-1 block text-sm text-muted">Tên người dùng</span>
             <input
               className="focus-ring w-full rounded-md border border-border bg-bg px-3 py-2 text-text"
               {...register("user_name")}
@@ -93,7 +93,7 @@ export default function SignupPage() {
           </label>
 
           <label className="block">
-            <span className="mb-1 block text-sm text-muted">Phone number (optional)</span>
+            <span className="mb-1 block text-sm text-muted">Số điện thoại (tùy chọn)</span>
             <input
               className="focus-ring w-full rounded-md border border-border bg-bg px-3 py-2 text-text"
               {...register("phone_number")}
@@ -101,13 +101,13 @@ export default function SignupPage() {
           </label>
 
           <label className="block">
-            <span className="mb-1 block text-sm text-muted">Bank</span>
+            <span className="mb-1 block text-sm text-muted">Ngân hàng</span>
             <select
               className="focus-ring w-full rounded-md border border-border bg-bg px-3 py-2 text-text"
               value={watch("bank_id")}
               onChange={(event) => setValue("bank_id", Number(event.target.value))}
             >
-              <option value={0}>Select bank</option>
+              <option value={0}>Chọn ngân hàng</option>
               {(banksQuery.data || []).map((bank) => (
                 <option key={bank.BankID} value={bank.BankID}>
                   {bank.BankCode} - {bank.BankName}
@@ -118,7 +118,7 @@ export default function SignupPage() {
           </label>
 
           <label className="block">
-            <span className="mb-1 block text-sm text-muted">Password</span>
+            <span className="mb-1 block text-sm text-muted">Mật khẩu</span>
             <input
               type="password"
               className="focus-ring w-full rounded-md border border-border bg-bg px-3 py-2 text-text"
@@ -128,7 +128,7 @@ export default function SignupPage() {
           </label>
 
           <label className="block">
-            <span className="mb-1 block text-sm text-muted">Recovery hint (optional)</span>
+            <span className="mb-1 block text-sm text-muted">Gợi ý khôi phục (tùy chọn)</span>
             <input
               className="focus-ring w-full rounded-md border border-border bg-bg px-3 py-2 text-text"
               {...register("recovery_hint")}
@@ -136,7 +136,7 @@ export default function SignupPage() {
           </label>
 
           <label className="block">
-            <span className="mb-1 block text-sm text-muted">Recovery answer (optional)</span>
+            <span className="mb-1 block text-sm text-muted">Câu trả lời khôi phục (tùy chọn)</span>
             <input
               type="password"
               className="focus-ring w-full rounded-md border border-border bg-bg px-3 py-2 text-text"
@@ -149,12 +149,12 @@ export default function SignupPage() {
             disabled={signupMutation.isPending || banksQuery.isLoading}
             className="focus-ring rounded-md bg-primary px-3 py-2 text-sm font-semibold text-bg disabled:opacity-60"
           >
-            {signupMutation.isPending ? "Creating..." : "Create account"}
+            {signupMutation.isPending ? "Đang tạo..." : "Tạo tài khoản"}
           </button>
         </form>
 
         <Link className="mt-4 inline-block text-sm text-muted underline" href="/login">
-          Back to login
+          Quay lại đăng nhập
         </Link>
       </section>
     </main>

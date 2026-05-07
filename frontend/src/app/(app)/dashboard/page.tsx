@@ -13,11 +13,13 @@ import { CategoryDonutChart } from "@/components/finance/category-donut-chart";
 import { KpiCard } from "@/components/finance/kpi-card";
 import { NetWorthChart } from "@/components/finance/net-worth-chart";
 import { AppShell } from "@/components/layout/app-shell";
+import { useReminderVisibility } from "@/hooks/use-reminder-visibility";
 import {
   extractApiErrorMessage,
   getBalanceHistory,
   getCategorySpending,
   getDashboardOverview,
+  getDashboardReminders,
   getMetaAccounts,
   getTransactions,
   getYearlySummary
@@ -45,6 +47,17 @@ function getAlertTone(level: string): "warning" | "danger" | "default" {
   return "default";
 }
 
+function getAlertLabel(level: string): string {
+  const normalized = String(level || "").toUpperCase();
+  if (normalized === "EXCEEDED") {
+    return "Vượt mức";
+  }
+  if (normalized === "WARNING") {
+    return "Cảnh báo";
+  }
+  return "Bình thường";
+}
+
 function getDisplayName(
   user?: { UserName?: string | null; Email?: string | null } | null
 ): string {
@@ -60,15 +73,15 @@ function getDisplayName(
     return emailName;
   }
 
-  return "User";
+  return "Người dùng";
 }
 
 function getTransactionLabel(row: TransactionWithCategory): string {
   if (row.TransactionType === "INCOME") {
-    return "Income";
+    return "Thu nhập";
   }
 
-  return row.CategoryName || "Expense";
+  return row.CategoryName || "Chi tiêu";
 }
 
 function getAmountClass(transactionType: string): string {
@@ -84,7 +97,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, token } = useAuth();
   const { selectedUserId, users } = useUserScope();
   const [cashFlowRange, setCashFlowRange] = useState<"MONTHLY" | "YEARLY">("MONTHLY");
 
@@ -110,15 +123,26 @@ export default function DashboardPage() {
     router.replace(nextUrl);
   }, [showWelcome, pathname, router, searchParams]);
 
-  const headerTitle = showWelcome ? `Welcome back, ${displayName}` : "Dashboard";
+  const headerTitle = showWelcome ? `Chào mừng trở lại, ${displayName}` : "Bảng điều khiển";
   const headerSubtitle = showWelcome
     ? undefined
-    : "Here is your latest financial overview.";
+    : "Đây là tổng quan tài chính mới nhất của bạn.";
 
   const dashboardQuery = useQuery({
     queryKey: ["dashboard-overview", scopedUserId],
     queryFn: () => getDashboardOverview(scopedUserId),
     enabled: Boolean(scopedUserId)
+  });
+
+  const remindersQuery = useQuery({
+    queryKey: ["dashboard-reminders", scopedUserId],
+    queryFn: () => getDashboardReminders(scopedUserId),
+    enabled: Boolean(scopedUserId)
+  });
+
+  const { hiddenReminderIds, dismissReminder } = useReminderVisibility({
+    userId: scopedUserId,
+    accessToken: token
   });
 
   const categoryQuery = useQuery({
@@ -175,10 +199,10 @@ export default function DashboardPage() {
 
   const cashFlowSummaryRows = useMemo(() => {
     return cashFlowChartData.map((row) => ({
-      Period: row.YearMonth,
-      Income: formatCurrency(row.MonthlyIncome),
-      Expense: formatCurrency(row.MonthlyExpense),
-      "Net saving": formatCurrency(row.NetSaving)
+      "Kỳ": row.YearMonth,
+      "Thu nhập": formatCurrency(row.MonthlyIncome),
+      "Chi tiêu": formatCurrency(row.MonthlyExpense),
+      "Tiết kiệm ròng": formatCurrency(row.NetSaving)
     }));
   }, [cashFlowChartData]);
 
@@ -186,37 +210,49 @@ export default function DashboardPage() {
     dashboardQuery.isLoading ||
     categoryQuery.isLoading ||
     historyQuery.isLoading ||
-    yearlyTrendQuery.isLoading;
+    yearlyTrendQuery.isLoading ||
+    remindersQuery.isLoading;
 
   const isError =
     dashboardQuery.isError ||
     categoryQuery.isError ||
     historyQuery.isError ||
-    yearlyTrendQuery.isError;
+    yearlyTrendQuery.isError ||
+    remindersQuery.isError;
 
   const errorMessage =
     dashboardQuery.error ||
     categoryQuery.error ||
     historyQuery.error ||
-    yearlyTrendQuery.error;
+    yearlyTrendQuery.error ||
+    remindersQuery.error;
 
   return (
     <AuthGuard>
-      <AppShell title={headerTitle} subtitle={headerSubtitle}>
-        {isLoading ? <LoadingSkeleton label="Loading dashboard..." /> : null}
+      <AppShell
+        title={headerTitle}
+        subtitle={headerSubtitle}
+        notificationCenter={{
+          allReminders: remindersQuery.data || [],
+          hiddenReminderIds,
+          onDismissReminder: dismissReminder
+        }}
+      >
+        {isLoading ? <LoadingSkeleton label="Đang tải bảng điều khiển..." /> : null}
 
         {isError ? (
           <ErrorState
             detail={extractApiErrorMessage(
               errorMessage,
-              "Failed to load dashboard data."
+              "Không thể tải dữ liệu bảng điều khiển."
             )}
             onRetry={() => {
               dashboardQuery.refetch();
               categoryQuery.refetch();
               historyQuery.refetch();
+              remindersQuery.refetch();
             }}
-            title="Unable to load dashboard"
+            title="Không thể tải dữ liệu"
           />
         ) : null}
 
@@ -224,24 +260,24 @@ export default function DashboardPage() {
           <>
             <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <KpiCard
-                label="Total Income"
+                label="Tổng thu nhập"
                 value={dashboardQuery.data.summary.TotalIncome}
                 tone="success"
               />
               <KpiCard
-                label="Total Expense"
+                label="Tổng chi tiêu"
                 value={dashboardQuery.data.summary.TotalExpense}
                 tone="warning"
               />
               <KpiCard
-                label="Net Saving"
+                label="Tiết kiệm ròng"
                 value={dashboardQuery.data.summary.NetSaving}
                 tone={
                   dashboardQuery.data.summary.NetSaving >= 0 ? "success" : "danger"
                 }
               />
               <KpiCard
-                label="Active Alerts"
+                label="Cảnh báo đang mở"
                 value={dashboardQuery.data.alerts.length}
                 tone={dashboardQuery.data.alerts.length > 0 ? "warning" : "default"}
                 format="number"
@@ -267,7 +303,7 @@ export default function DashboardPage() {
                             : "border-border bg-bg text-muted hover:bg-surface-hover hover:text-text"
                         }`}
                       >
-                        Monthly
+                        Theo tháng
                       </button>
                       <button
                         type="button"
@@ -278,7 +314,7 @@ export default function DashboardPage() {
                             : "border-border bg-bg text-muted hover:bg-surface-hover hover:text-text"
                         }`}
                       >
-                        Yearly
+                        Theo năm
                       </button>
                     </>
                   }
@@ -291,9 +327,9 @@ export default function DashboardPage() {
 
             <div className="mt-4">
               <DataTable
-                title={`Cash Flow Summary (${cashFlowRange === "MONTHLY" ? "Monthly" : "Yearly"})`}
+                title={`Tóm tắt dòng tiền (${cashFlowRange === "MONTHLY" ? "Theo tháng" : "Theo năm"})`}
                 rows={cashFlowSummaryRows}
-                emptyMessage="No cash flow summary data."
+                emptyMessage="Không có dữ liệu tóm tắt dòng tiền."
               />
             </div>
 
@@ -325,18 +361,18 @@ function RecentTransactionsCard({
     <section className="h-full rounded-xl border border-border bg-surface p-5 shadow-sm">
       <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
         <h2 className="text-lg font-semibold tracking-tight text-text">
-          Recent Transactions
+          Giao dịch gần đây
         </h2>
-        <p className="text-sm text-muted">Latest 5 account movements</p>
+        <p className="text-sm text-muted">5 giao dịch mới nhất</p>
       </div>
 
       {loading ? (
-        <p className="text-sm text-muted">Loading recent transactions...</p>
+        <p className="text-sm text-muted">Đang tải giao dịch gần đây...</p>
       ) : null}
 
       {!loading && transactions.length === 0 ? (
         <div className="flex h-28 items-center justify-center rounded-lg border border-dashed border-border bg-bg/50">
-          <p className="text-sm text-muted">No recent transactions found.</p>
+          <p className="text-sm text-muted">Chưa có giao dịch gần đây.</p>
         </div>
       ) : null}
 
@@ -377,14 +413,14 @@ function SpendingAlertsCard({ alerts }: { alerts: SpendingAlert[] }) {
     <section className="h-full rounded-xl border border-border bg-surface p-5 shadow-sm">
       <div className="mb-4 flex items-end justify-between gap-2">
         <h2 className="text-lg font-semibold tracking-tight text-text">
-          Spending Alerts
+          Cảnh báo chi tiêu
         </h2>
-        <p className="text-sm text-muted">Top active alerts</p>
+        <p className="text-sm text-muted">Cảnh báo quan trọng</p>
       </div>
 
       {alerts.length === 0 ? (
         <div className="flex h-32 flex-col items-center justify-center rounded-lg border border-dashed border-border bg-bg/50">
-          <p className="text-sm text-muted">All good! No active alerts.</p>
+          <p className="text-sm text-muted">Tuyệt vời, hiện chưa có cảnh báo.</p>
         </div>
       ) : (
         <ul className="space-y-3">
@@ -399,7 +435,7 @@ function SpendingAlertsCard({ alerts }: { alerts: SpendingAlert[] }) {
                 <div>
                   <p className="text-sm font-medium text-text">{alert.CategoryName}</p>
                   <p className="text-xs text-muted">
-                    Budget: {alert.BudgetYear}-{String(alert.BudgetMonth).padStart(2, "0")}
+                    Ngân sách: {String(alert.BudgetMonth).padStart(2, "0")}/{alert.BudgetYear}
                   </p>
                 </div>
 
@@ -412,7 +448,7 @@ function SpendingAlertsCard({ alerts }: { alerts: SpendingAlert[] }) {
                         : "bg-primary/10 text-primary"
                   }`}
                 >
-                  {alert.AlertLevel}
+                  {getAlertLabel(alert.AlertLevel)}
                 </span>
               </li>
             );

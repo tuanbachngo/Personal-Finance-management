@@ -2,8 +2,11 @@
 -- Keep the database name exactly as Personal_Finance.
 
 DROP DATABASE IF EXISTS Personal_Finance;
-CREATE DATABASE IF NOT EXISTS Personal_Finance;
+CREATE DATABASE IF NOT EXISTS Personal_Finance
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_0900_ai_ci;
 USE Personal_Finance;
+SET NAMES utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 -- 1. USERS
 CREATE TABLE Users (
@@ -90,7 +93,8 @@ CREATE TABLE AuthSessionTokens (
 -- 6. EXPENSE CATEGORIES
 CREATE TABLE ExpenseCategories (
     CategoryID INT AUTO_INCREMENT PRIMARY KEY,
-    CategoryName VARCHAR(100) NOT NULL UNIQUE
+    CategoryName VARCHAR(100) NOT NULL UNIQUE,
+    IconEmoji VARCHAR(16) NOT NULL DEFAULT '💸'
 );
 
 -- 7. BANK CATALOG
@@ -428,7 +432,40 @@ CREATE TABLE IF NOT EXISTS GoalContributions (
         CHECK (Amount > 0)
 );
 
--- 19. INDEXES 
+-- 19. TRANSACTION GOAL LINKS
+CREATE TABLE IF NOT EXISTS TransactionGoalLinks (
+    LinkID BIGINT AUTO_INCREMENT PRIMARY KEY,
+    UserID INT NOT NULL,
+    GoalID INT NOT NULL,
+    ContributionID INT NOT NULL,
+    SourceType ENUM('INCOME', 'EXPENSE') NOT NULL,
+    SourceTransactionID INT NOT NULL,
+    ContributionType ENUM('DEPOSIT', 'WITHDRAW') NOT NULL,
+    CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_txngoallinks_user
+        FOREIGN KEY (UserID)
+        REFERENCES Users(UserID)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+
+    CONSTRAINT fk_txngoallinks_goal
+        FOREIGN KEY (GoalID)
+        REFERENCES SavingGoals(GoalID)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+
+    CONSTRAINT fk_txngoallinks_contribution
+        FOREIGN KEY (ContributionID)
+        REFERENCES GoalContributions(ContributionID)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+
+    CONSTRAINT uq_txngoallinks_source UNIQUE (SourceType, SourceTransactionID),
+    CONSTRAINT uq_txngoallinks_contribution UNIQUE (ContributionID)
+);
+
+-- 20. INDEXES
 CREATE INDEX idx_savinggoals_user_status
     ON SavingGoals(UserID, Status);
 
@@ -446,6 +483,12 @@ CREATE INDEX idx_goalcontributions_goal_date
 
 CREATE INDEX idx_goalcontributions_user_date
     ON GoalContributions(UserID, ContributionDate);
+
+CREATE INDEX idx_txngoallinks_user_source
+    ON TransactionGoalLinks(UserID, SourceType, SourceTransactionID);
+
+CREATE INDEX idx_txngoallinks_goal
+    ON TransactionGoalLinks(GoalID, CreatedAt);
 
 CREATE INDEX idx_bankaccounts_userid ON BankAccounts(UserID);
 CREATE INDEX idx_bankaccounts_bankid ON BankAccounts(BankID);

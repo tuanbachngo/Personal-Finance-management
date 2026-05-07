@@ -94,6 +94,7 @@ export type AccountInfo = {
 export type CategoryInfo = {
   CategoryID: number;
   CategoryName: string;
+  IconEmoji: string;
 };
 
 export type TransactionRecord = {
@@ -107,6 +108,10 @@ export type TransactionRecord = {
   Amount: number;
   TransactionDate: string;
   Description: string | null;
+  GoalID?: number | null;
+  GoalName?: string | null;
+  GoalType?: "SAVE_UP" | "PAY_DOWN" | string | null;
+  GoalContributionType?: "DEPOSIT" | "WITHDRAW" | string | null;
 };
 
 export type IncomeRecord = {
@@ -134,6 +139,7 @@ export type IncomeCreateRequest = {
   amount: number;
   transaction_date?: string | null;
   description?: string;
+  goal_id?: number | null;
 };
 
 export type IncomeUpdateRequest = IncomeCreateRequest;
@@ -145,6 +151,7 @@ export type ExpenseCreateRequest = {
   amount: number;
   transaction_date?: string | null;
   description?: string;
+  goal_id?: number | null;
 };
 
 export type ExpenseUpdateRequest = ExpenseCreateRequest;
@@ -231,6 +238,26 @@ export type BudgetUpdateRequest = BudgetCreateRequest;
 export type FixedExpenseItem = {
   item_name: string;
   amount: number;
+  category_id?: number | null;
+  category_name?: string | null;
+  category_icon?: string | null;
+};
+
+export type FixedExpenseCard = {
+  card_id: string;
+  item_name: string;
+  category_id?: number | null;
+  category_name: string;
+  category_icon: string;
+  planned_amount: number;
+  spent_amount: number;
+  remaining_amount: number;
+  usage_percent: number;
+  alert_level: string;
+  spending_pace_status: string;
+  safe_daily_spend: number;
+  safe_weekly_spend: number;
+  days_left_in_month: number;
 };
 
 export type BudgetSettingsRequest = {
@@ -265,6 +292,7 @@ export type BudgetCategoryGuardrail = {
   budget_id: number;
   category_id: number;
   category_name: string;
+  category_icon: string;
   planned_amount: number;
   spent_amount: number;
   remaining_budget: number;
@@ -297,9 +325,20 @@ export type BudgetOverviewResponse = {
   remaining_budget: number;
   budget_health: "HEALTHY" | "CAUTION" | "RISKY" | "OVERPLANNED" | string;
   warnings: string[];
+  fixed_expense_cards: FixedExpenseCard[];
   categories: BudgetCategoryGuardrail[];
   created_at: string | null;
   updated_at: string | null;
+};
+
+export type DashboardReminder = {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  action_label: string;
+  action_href: string;
+  severity: "info" | "warning" | "danger" | string;
 };
 
 export type CanISpendRequest = {

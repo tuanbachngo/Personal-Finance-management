@@ -54,7 +54,7 @@ def logout(ctx: AuthContext = Depends(get_authenticated_context)) -> ApiMessageR
         )
     except ValueError as err:
         raise map_value_error_to_http(err, default_status=400) from err
-    message = "Logged out successfully." if revoked else "Session was already inactive."
+    message = "Đăng xuất thành công." if revoked else "Phiên đăng nhập đã hết hiệu lực trước đó."
     return ApiMessageResponse(message=message)
 
 
@@ -77,7 +77,7 @@ def signup(payload: SignupRequest, service=Depends(get_finance_service)) -> ApiM
         )
     except ValueError as err:
         raise map_value_error_to_http(err, default_status=400) from err
-    return ApiMessageResponse(message="Sign up successful. Please sign in with your new account.")
+    return ApiMessageResponse(message="Đăng ký thành công. Vui lòng đăng nhập bằng tài khoản mới.")
 
 
 @router.post("/otp/unlock/request", response_model=ApiMessageResponse)
@@ -86,7 +86,7 @@ def request_unlock_otp(payload: OtpRequest, service=Depends(get_finance_service)
         result = service.generate_otp_for_auth_flow(email=payload.email, otp_purpose="UNLOCK")
     except ValueError as err:
         raise map_value_error_to_http(err, default_status=400) from err
-    return ApiMessageResponse(message=result.get("message", "OTP request submitted."))
+    return ApiMessageResponse(message=result.get("message", "Đã gửi yêu cầu OTP."))
 
 
 @router.post("/otp/unlock/verify", response_model=ApiMessageResponse)
@@ -95,7 +95,7 @@ def verify_unlock_otp(payload: OtpVerifyRequest, service=Depends(get_finance_ser
         service.verify_unlock_otp(email=payload.email, otp_code=payload.otp_code)
     except ValueError as err:
         raise map_value_error_to_http(err, default_status=400) from err
-    return ApiMessageResponse(message="OTP verified. Account is unlocked now. Please sign in.")
+    return ApiMessageResponse(message="Xác thực OTP thành công. Tài khoản đã được mở khóa.")
 
 
 @router.get("/recovery-hint", response_model=RecoveryHintResponse)
@@ -122,7 +122,7 @@ def request_password_reset_otp(
         )
     except ValueError as err:
         raise map_value_error_to_http(err, default_status=400) from err
-    return ApiMessageResponse(message=result.get("message", "OTP request submitted."))
+    return ApiMessageResponse(message=result.get("message", "Đã gửi yêu cầu OTP."))
 
 
 @router.post("/password/reset/confirm", response_model=ApiMessageResponse)
@@ -139,7 +139,7 @@ def confirm_password_reset(
         )
     except ValueError as err:
         raise map_value_error_to_http(err, default_status=400) from err
-    return ApiMessageResponse(message="Password has been reset successfully. Please sign in.")
+    return ApiMessageResponse(message="Đặt lại mật khẩu thành công. Vui lòng đăng nhập lại.")
 
 
 @router.put("/profile", response_model=ApiMessageResponse)
@@ -163,7 +163,7 @@ def update_own_profile(
         )
     except ValueError as err:
         raise map_value_error_to_http(err, default_status=400) from err
-    return ApiMessageResponse(message="Profile updated successfully.")
+    return ApiMessageResponse(message="Đã cập nhật hồ sơ thành công.")
 
 
 @router.post("/password/change", response_model=ApiMessageResponse)
@@ -209,5 +209,5 @@ def change_own_password(
         raise map_value_error_to_http(err, default_status=default_status) from err
 
     return ApiMessageResponse(
-        message="Password changed successfully. Please sign in again."
+        message="Đổi mật khẩu thành công. Vui lòng đăng nhập lại."
     )

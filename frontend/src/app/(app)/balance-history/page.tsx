@@ -24,18 +24,18 @@ function getDisplayName(user?: { UserName?: string | null; Email?: string | null
     return emailName;
   }
 
-  return "your account";
+  return "tài khoản của bạn";
 }
 
 function friendlyTransactionType(type: string): string {
   const normalized = type.toUpperCase();
 
   if (normalized === "INCOME") {
-    return "Money in";
+    return "Tiền vào";
   }
 
   if (normalized === "EXPENSE") {
-    return "Money out";
+    return "Tiền ra";
   }
 
   return type;
@@ -78,12 +78,12 @@ export default function BalanceHistoryPage() {
   return (
     <AuthGuard>
       <AppShell
-        title="Balance History"
-        subtitle={`Track how balances changed over time for ${getDisplayName(scopedUser)}`}
+        title="Lịch sử số dư"
+        subtitle={`Theo dõi biến động số dư theo thời gian của ${getDisplayName(scopedUser)}`}
       >
         <div className="rounded-xl border border-border bg-surface p-5 shadow-sm">
           <label className="mb-2 block text-sm font-semibold text-muted">
-            Filter by account
+            Lọc theo tài khoản
           </label>
           <select
             value={accountId ?? ""}
@@ -92,7 +92,7 @@ export default function BalanceHistoryPage() {
             }
             className="focus-ring w-full rounded-xl border border-border bg-bg px-3 py-2 text-text"
           >
-            <option value="">All accounts</option>
+            <option value="">Tất cả tài khoản</option>
             {(accountsQuery.data || []).map((row) => (
               <option key={row.AccountID} value={row.AccountID}>
                 {row.BankName}
@@ -103,9 +103,9 @@ export default function BalanceHistoryPage() {
 
         <div className="mt-4">
           <DataTable
-            title="Balance Timeline"
+            title="Dòng thời gian số dư"
             rows={tableRows}
-            emptyMessage="No balance history found."
+            emptyMessage="Không có dữ liệu lịch sử số dư."
           />
         </div>
       </AppShell>

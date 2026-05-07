@@ -211,10 +211,13 @@ class GoalRepository:
         contribution_type: str,
         contribution_date,
         description: Optional[str],
+        cursor=None,
+        commit: bool = True,
     ) -> int:
-        cursor = self.connection.cursor()
+        owns_cursor = cursor is None
+        exec_cursor = cursor or self.connection.cursor()
         try:
-            cursor.execute(
+            exec_cursor.execute(
                 """
                 INSERT INTO GoalContributions (
                     GoalID, UserID, AccountID, Amount,
@@ -232,10 +235,10 @@ class GoalRepository:
                     description,
                 ),
             )
-            contribution_id = int(cursor.lastrowid)
+            contribution_id = int(exec_cursor.lastrowid)
 
             if contribution_type == "DEPOSIT":
-                cursor.execute(
+                exec_cursor.execute(
                     """
                     UPDATE SavingGoals
                     SET CurrentAmount = CurrentAmount + %s
@@ -244,7 +247,7 @@ class GoalRepository:
                     (amount, goal_id, user_id),
                 )
             else:
-                cursor.execute(
+                exec_cursor.execute(
                     """
                     UPDATE SavingGoals
                     SET CurrentAmount = CurrentAmount - %s
@@ -254,10 +257,10 @@ class GoalRepository:
                     """,
                     (amount, goal_id, user_id, amount),
                 )
-                if cursor.rowcount == 0:
+                if exec_cursor.rowcount == 0:
                     raise ValueError("Cannot withdraw more than the current goal amount.")
 
-            cursor.execute(
+            exec_cursor.execute(
                 """
                 UPDATE SavingGoals
                 SET Status =
@@ -271,10 +274,229 @@ class GoalRepository:
                 (goal_id, user_id),
             )
 
-            self.connection.commit()
+            if commit:
+                self.connection.commit()
             return contribution_id
         except Exception:
-            self.connection.rollback()
+            if commit:
+                self.connection.rollback()
             raise
         finally:
-            cursor.close()
+            if owns_cursor:
+                exec_cursor.close()
+
+    def get_goal_contribution_by_id(self, contribution_id: int) -> Optional[Dict[str, Any]]:
+        return self._fetch_one(
+            """
+            SELECT
+                ContributionID, GoalID, UserID, AccountID,
+                Amount, ContributionType, ContributionDate,
+                Description, CreatedAt
+            FROM GoalContributions
+            WHERE ContributionID = %s
+            """,
+            (contribution_id,),
+        )
+
+    def delete_goal_contribution(
+        self,
+        contribution_id: int,
+        user_id: int,
+        cursor=None,
+        commit: bool = True,
+    ) -> None:
+        owns_cursor = cursor is None
+        exec_cursor = cursor or self.connection.cursor(dictionary=True)
+        try:
+            exec_cursor.execute(
+                """
+                SELECT ContributionID, GoalID, UserID, Amount, ContributionType
+                FROM GoalContributions
+                WHERE ContributionID = %s AND UserID = %s
+                """,
+                (contribution_id, user_id),
+            )
+            row = exec_cursor.fetchone()
+            if row is None:
+                return
+
+            goal_id = int(row["GoalID"])
+            amount = float(row["Amount"])
+            contribution_type = str(row["ContributionType"]).upper()
+
+            if contribution_type == "DEPOSIT":
+                exec_cursor.execute(
+                    """
+                    UPDATE SavingGoals
+                    SET CurrentAmount = GREATEST(CurrentAmount - %s, 0)
+                    WHERE GoalID = %s AND UserID = %s
+                    """,
+                    (amount, goal_id, user_id),
+                )
+            else:
+                exec_cursor.execute(
+                    """
+                    UPDATE SavingGoals
+                    SET CurrentAmount = CurrentAmount + %s
+                    WHERE GoalID = %s AND UserID = %s
+                    """,
+                    (amount, goal_id, user_id),
+                )
+
+            exec_cursor.execute(
+                """
+                DELETE FROM GoalContributions
+                WHERE ContributionID = %s AND UserID = %s
+                """,
+                (contribution_id, user_id),
+            )
+
+            exec_cursor.execute(
+                """
+                UPDATE SavingGoals
+                SET Status =
+                    CASE
+                        WHEN CurrentAmount >= TargetAmount THEN 'COMPLETED'
+                        WHEN Status = 'COMPLETED' AND CurrentAmount < TargetAmount THEN 'ACTIVE'
+                        ELSE Status
+                    END
+                WHERE GoalID = %s AND UserID = %s
+                """,
+                (goal_id, user_id),
+            )
+
+            if commit:
+                self.connection.commit()
+        except Exception:
+            if commit:
+                self.connection.rollback()
+            raise
+        finally:
+            if owns_cursor:
+                exec_cursor.close()
+
+    def get_transaction_goal_link(
+        self,
+        source_type: str,
+        source_transaction_id: int,
+    ) -> Optional[Dict[str, Any]]:
+        return self._fetch_one(
+            """
+            SELECT
+                l.LinkID,
+                l.UserID,
+                l.GoalID,
+                l.ContributionID,
+                l.SourceType,
+                l.SourceTransactionID,
+                l.ContributionType,
+                g.GoalName,
+                g.GoalType
+            FROM TransactionGoalLinks l
+            LEFT JOIN SavingGoals g ON g.GoalID = l.GoalID
+            WHERE l.SourceType = %s AND l.SourceTransactionID = %s
+            """,
+            (source_type, source_transaction_id),
+        )
+
+    def get_transaction_goal_links_by_sources(
+        self,
+        source_type: str,
+        source_transaction_ids: List[int],
+    ) -> List[Dict[str, Any]]:
+        if not source_transaction_ids:
+            return []
+
+        placeholders = ", ".join(["%s"] * len(source_transaction_ids))
+        query = f"""
+            SELECT
+                l.LinkID,
+                l.UserID,
+                l.GoalID,
+                l.ContributionID,
+                l.SourceType,
+                l.SourceTransactionID,
+                l.ContributionType,
+                g.GoalName,
+                g.GoalType
+            FROM TransactionGoalLinks l
+            LEFT JOIN SavingGoals g ON g.GoalID = l.GoalID
+            WHERE l.SourceType = %s
+              AND l.SourceTransactionID IN ({placeholders})
+        """
+        params = (source_type, *source_transaction_ids)
+        return self._fetch_all(query, params)
+
+    def create_transaction_goal_link(
+        self,
+        user_id: int,
+        goal_id: int,
+        contribution_id: int,
+        source_type: str,
+        source_transaction_id: int,
+        contribution_type: str,
+        cursor=None,
+        commit: bool = True,
+    ) -> int:
+        owns_cursor = cursor is None
+        exec_cursor = cursor or self.connection.cursor()
+        try:
+            exec_cursor.execute(
+                """
+                INSERT INTO TransactionGoalLinks (
+                    UserID,
+                    GoalID,
+                    ContributionID,
+                    SourceType,
+                    SourceTransactionID,
+                    ContributionType
+                )
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    user_id,
+                    goal_id,
+                    contribution_id,
+                    source_type,
+                    source_transaction_id,
+                    contribution_type,
+                ),
+            )
+            link_id = int(exec_cursor.lastrowid)
+            if commit:
+                self.connection.commit()
+            return link_id
+        except Exception:
+            if commit:
+                self.connection.rollback()
+            raise
+        finally:
+            if owns_cursor:
+                exec_cursor.close()
+
+    def delete_transaction_goal_link(
+        self,
+        source_type: str,
+        source_transaction_id: int,
+        cursor=None,
+        commit: bool = True,
+    ) -> None:
+        owns_cursor = cursor is None
+        exec_cursor = cursor or self.connection.cursor()
+        try:
+            exec_cursor.execute(
+                """
+                DELETE FROM TransactionGoalLinks
+                WHERE SourceType = %s AND SourceTransactionID = %s
+                """,
+                (source_type, source_transaction_id),
+            )
+            if commit:
+                self.connection.commit()
+        except Exception:
+            if commit:
+                self.connection.rollback()
+            raise
+        finally:
+            if owns_cursor:
+                exec_cursor.close()

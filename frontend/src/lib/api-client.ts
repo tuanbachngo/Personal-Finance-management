@@ -18,6 +18,7 @@ import type {
   CategorySpendingPoint,
   CreateEntityResponse,
   DailySummaryPoint,
+  DashboardReminder,
   DashboardOverviewResponse,
   ExpenseCreateRequest,
   ExpenseRecord,
@@ -146,6 +147,13 @@ export async function changeOwnPassword(
 
 export async function getDashboardOverview(userId?: number): Promise<DashboardOverviewResponse> {
   const response = await apiClient.get<DashboardOverviewResponse>("/dashboard/overview", {
+    params: { user_id: userId }
+  });
+  return response.data;
+}
+
+export async function getDashboardReminders(userId?: number): Promise<DashboardReminder[]> {
+  const response = await apiClient.get<DashboardReminder[]>("/dashboard/reminders", {
     params: { user_id: userId }
   });
   return response.data;

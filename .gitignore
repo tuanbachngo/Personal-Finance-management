@@ -25,3 +25,10 @@ backups/
 
 # Local raw font/source assets
 Aeonik Pro/
+
+# Local planning/design notes (do not commit)
+AGENTS.md
+SKILL.md
+DESIGN.md
+frontend_design_system.md
+DESIGNS.md

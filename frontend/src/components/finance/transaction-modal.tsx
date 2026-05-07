@@ -10,15 +10,17 @@ import {
   deleteExpense,
   deleteIncome,
   extractApiErrorMessage,
+  getGoalProgress,
   getMetaAccounts,
   getMetaCategories,
   updateExpense,
   updateIncome
 } from "@/lib/api-client";
+import { getCategoryIcon } from "@/lib/category-icon";
 import { formatCurrency } from "@/lib/format";
 import { useAuth } from "@/providers/auth-provider";
 import { useUserScope } from "@/providers/user-scope-provider";
-import type { CategoryInfo, TransactionRecord } from "@/types/api";
+import type { CategoryInfo, GoalProgressRecord, TransactionRecord } from "@/types/api";
 
 type Props = {
   isOpen: boolean;
@@ -30,6 +32,10 @@ type Props = {
 };
 
 type SuggestionGroup = "food" | "transport" | "shopping" | "utilities" | "health";
+type GoalBucket = "SAVE_UP" | "PAY_DOWN";
+
+const SPECIAL_CATEGORY_SAVE_UP = "__GOAL_SAVE_UP__";
+const SPECIAL_CATEGORY_PAY_DOWN = "__GOAL_PAY_DOWN__";
 
 const KEYWORD_GROUPS: { keywords: string[]; group: SuggestionGroup }[] = [
   {
@@ -120,6 +126,49 @@ function findSuggestedCategoryId(
   return category ? category.CategoryID : null;
 }
 
+function findCategoryIdByHints(
+  categories: CategoryInfo[],
+  hints: string[]
+): number | null {
+  const match = categories.find((row) => {
+    const normalizedName = normalizeText(row.CategoryName || "");
+    return hints.some((hint) => normalizedName.includes(hint));
+  });
+  return match ? match.CategoryID : null;
+}
+
+function resolveGoalBucketCategoryId(
+  categories: CategoryInfo[],
+  bucket: GoalBucket
+): number {
+  if (bucket === "SAVE_UP") {
+    return (
+      findCategoryIdByHints(categories, ["tich luy", "tiet kiem", "tietkiem", "save up", "save"]) || 0
+    );
+  }
+  return (
+    findCategoryIdByHints(categories, ["tra no", "trano", "no va tra gop", "tra gop", "debt", "loan"]) || 0
+  );
+}
+
+function resolveExpenseCategoryFromSelection(
+  selection: string,
+  categories: CategoryInfo[]
+): number {
+  if (!selection || selection === "0") {
+    return 0;
+  }
+  if (selection === SPECIAL_CATEGORY_SAVE_UP) {
+    return resolveGoalBucketCategoryId(categories, "SAVE_UP");
+  }
+  if (selection === SPECIAL_CATEGORY_PAY_DOWN) {
+    return resolveGoalBucketCategoryId(categories, "PAY_DOWN");
+  }
+
+  const parsed = Number(selection);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 export function TransactionModal({
   isOpen,
   mode,
@@ -135,9 +184,11 @@ export function TransactionModal({
   const [type, setType] = useState<"INCOME" | "EXPENSE">("EXPENSE");
   const [accountId, setAccountId] = useState(0);
   const [categoryId, setCategoryId] = useState(0);
+  const [categorySelection, setCategorySelection] = useState("0");
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
   const [transactionDate, setTransactionDate] = useState("");
+  const [goalId, setGoalId] = useState(0);
   const [categoryTouched, setCategoryTouched] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -151,6 +202,11 @@ export function TransactionModal({
     queryKey: ["categories"],
     queryFn: getMetaCategories,
     enabled: isOpen
+  });
+  const goalsQuery = useQuery({
+    queryKey: ["goals-progress", userId],
+    queryFn: () => getGoalProgress(userId),
+    enabled: Boolean(userId) && isOpen
   });
 
   const createIncomeMutation = useMutation({ mutationFn: createIncome });
@@ -183,18 +239,33 @@ export function TransactionModal({
       setType(transaction.TransactionType as "INCOME" | "EXPENSE");
       setAccountId(transaction.AccountID);
       setCategoryId(transaction.CategoryID || 0);
+      setCategorySelection(String(transaction.CategoryID || 0));
       setAmount(formatAmountInput(String(transaction.Amount)));
       setDescription(transaction.Description || "");
       setTransactionDate(toInputDate(transaction.TransactionDate));
+      setGoalId(transaction.GoalID || 0);
+      if (
+        String(transaction.TransactionType || "").toUpperCase() === "EXPENSE" &&
+        Number(transaction.GoalID || 0) > 0
+      ) {
+        const normalizedGoalType = String(transaction.GoalType || "").toUpperCase();
+        if (normalizedGoalType === "PAY_DOWN") {
+          setCategorySelection(SPECIAL_CATEGORY_PAY_DOWN);
+        } else {
+          setCategorySelection(SPECIAL_CATEGORY_SAVE_UP);
+        }
+      }
       return;
     }
 
     setType("EXPENSE");
     setAccountId(0);
     setCategoryId(0);
+    setCategorySelection("0");
     setAmount("");
     setDescription("");
     setTransactionDate(toInputDate(new Date().toISOString()));
+    setGoalId(0);
   }, [isOpen, mode, transaction]);
 
   const suggestedCategoryId = useMemo(() => {
@@ -212,12 +283,81 @@ export function TransactionModal({
     return row?.CategoryName || null;
   }, [categoriesQuery.data, suggestedCategoryId]);
 
+  const groupedGoals = useMemo(() => {
+    const allGoals = (goalsQuery.data || []).filter((goal) => {
+      const normalizedStatus = String(goal.Status || "").toUpperCase();
+      if (normalizedStatus === "ACTIVE") {
+        return true;
+      }
+      return goal.GoalID === goalId;
+    });
+
+    const saveUpGoals: GoalProgressRecord[] = [];
+    const payDownGoals: GoalProgressRecord[] = [];
+
+    allGoals.forEach((goal) => {
+      if (String(goal.GoalType || "").toUpperCase() === "PAY_DOWN") {
+        payDownGoals.push(goal);
+      } else {
+        saveUpGoals.push(goal);
+      }
+    });
+
+    return { saveUpGoals, payDownGoals };
+  }, [goalsQuery.data, goalId]);
+
+  const selectedGoal = useMemo(() => {
+    if (!goalId) {
+      return null;
+    }
+    return (goalsQuery.data || []).find((goal) => goal.GoalID === goalId) || null;
+  }, [goalsQuery.data, goalId]);
+
+  const selectedGoalBucket = useMemo<GoalBucket | null>(() => {
+    if (categorySelection === SPECIAL_CATEGORY_SAVE_UP) {
+      return "SAVE_UP";
+    }
+    if (categorySelection === SPECIAL_CATEGORY_PAY_DOWN) {
+      return "PAY_DOWN";
+    }
+    return null;
+  }, [categorySelection]);
+
+  const goalModeOptions = useMemo(() => {
+    if (selectedGoalBucket === "SAVE_UP") {
+      return groupedGoals.saveUpGoals;
+    }
+    if (selectedGoalBucket === "PAY_DOWN") {
+      return groupedGoals.payDownGoals;
+    }
+    return [];
+  }, [selectedGoalBucket, groupedGoals]);
+
   useEffect(() => {
     if (type !== "EXPENSE" || categoryTouched || !suggestedCategoryId) {
       return;
     }
     setCategoryId(suggestedCategoryId);
+    setCategorySelection(String(suggestedCategoryId));
   }, [type, categoryTouched, suggestedCategoryId]);
+
+  useEffect(() => {
+    if (type !== "EXPENSE") {
+      setGoalId(0);
+      return;
+    }
+
+    const categories = categoriesQuery.data || [];
+    const resolvedCategoryId = resolveExpenseCategoryFromSelection(
+      categorySelection,
+      categories
+    );
+    setCategoryId(resolvedCategoryId);
+
+    if (!selectedGoalBucket) {
+      setGoalId(0);
+    }
+  }, [type, categorySelection, selectedGoalBucket, categoriesQuery.data]);
 
   const duplicateMatches = useMemo(() => {
     if (!transactionDate || !accountId) {
@@ -271,32 +411,41 @@ export function TransactionModal({
 
   const submit = async () => {
     if (!userId) {
-      setSubmitError("Missing user scope.");
+      setSubmitError("Thiếu phạm vi người dùng.");
       return;
     }
     if (!accountId) {
-      setSubmitError("Please select an account.");
+      setSubmitError("Vui lòng chọn tài khoản.");
       return;
     }
     if (!transactionDate) {
-      setSubmitError("Please select transaction date.");
+      setSubmitError("Vui lòng chọn ngày giao dịch.");
+      return;
+    }
+    if (type === "EXPENSE" && selectedGoalBucket && !categoryId) {
+      setSubmitError("Thiếu danh mục hệ thống cho Trả nợ/Tích lũy. Vui lòng cập nhật danh mục rồi thử lại.");
       return;
     }
     if (type === "EXPENSE" && !categoryId) {
-      setSubmitError("Please select category for expense.");
+      setSubmitError("Vui lòng chọn danh mục cho khoản chi.");
+      return;
+    }
+
+    if (type === "EXPENSE" && selectedGoalBucket && !goalId) {
+      setSubmitError("Vui lòng chọn mục tiêu cụ thể.");
       return;
     }
 
     const parsedAmount = Number(amount.replace(/,/g, ""));
     if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
-      setSubmitError("Amount must be greater than 0.");
+      setSubmitError("Số tiền phải lớn hơn 0.");
       return;
     }
 
     setSubmitError(null);
     try {
       let finalDescription = description;
-      if (type === "EXPENSE") {
+      if (type === "EXPENSE" && !selectedGoalBucket) {
         const [yearRaw, monthRaw] = transactionDate.split("-");
         const budgetYear = Number(yearRaw);
         const budgetMonth = Number(monthRaw);
@@ -310,16 +459,16 @@ export function TransactionModal({
 
         if (canSpendResult.requires_confirmation) {
           const continueAnyway = window.confirm(
-            `${canSpendResult.decision}\n${canSpendResult.message}\n\nRemaining before: ${formatCurrency(canSpendResult.remaining_before)}\nRemaining after: ${formatCurrency(canSpendResult.remaining_after)}\n\nContinue anyway?`
+            `${canSpendResult.decision}\n${canSpendResult.message}\n\nCòn lại trước khi chi: ${formatCurrency(canSpendResult.remaining_before)}\nCòn lại sau khi chi: ${formatCurrency(canSpendResult.remaining_after)}\n\nBạn vẫn muốn tiếp tục?`
           );
           if (!continueAnyway) {
             return;
           }
-          const reason = window.prompt("Optional: Why do you want to continue this expense?", "");
+          const reason = window.prompt("Tùy chọn: Lý do bạn vẫn muốn tiếp tục khoản chi này?", "");
           if (reason && reason.trim()) {
             finalDescription = finalDescription
-              ? `${finalDescription} | Overspending reason: ${reason.trim()}`
-              : `Overspending reason: ${reason.trim()}`;
+              ? `${finalDescription} | Lý do vượt ngân sách: ${reason.trim()}`
+              : `Lý do vượt ngân sách: ${reason.trim()}`;
           }
         }
       }
@@ -331,7 +480,8 @@ export function TransactionModal({
             account_id: accountId,
             amount: parsedAmount,
             transaction_date: transactionDate,
-            description: finalDescription
+            description: finalDescription,
+            goal_id: null
           });
         } else {
           await createExpenseMutation.mutateAsync({
@@ -340,7 +490,8 @@ export function TransactionModal({
             category_id: categoryId,
             amount: parsedAmount,
             transaction_date: transactionDate,
-            description: finalDescription
+            description: finalDescription,
+            goal_id: goalId || null
           });
         }
       } else if (mode === "EDIT" && transaction) {
@@ -352,7 +503,8 @@ export function TransactionModal({
               account_id: accountId,
               amount: parsedAmount,
               transaction_date: transactionDate,
-              description: finalDescription
+              description: finalDescription,
+              goal_id: null
             }
           });
         } else {
@@ -364,14 +516,15 @@ export function TransactionModal({
               category_id: categoryId,
               amount: parsedAmount,
               transaction_date: transactionDate,
-              description: finalDescription
+              description: finalDescription,
+              goal_id: goalId || null
             }
           });
         }
       }
       onSuccess();
     } catch (error) {
-      setSubmitError(extractApiErrorMessage(error, "Failed to save transaction."));
+      setSubmitError(extractApiErrorMessage(error, "Không thể lưu giao dịch."));
     }
   };
 
@@ -380,7 +533,7 @@ export function TransactionModal({
       return;
     }
 
-    const confirmed = window.confirm("Delete this transaction?");
+    const confirmed = window.confirm("Bạn có chắc muốn xóa giao dịch này?");
     if (!confirmed) {
       return;
     }
@@ -395,7 +548,20 @@ export function TransactionModal({
       }
       onSuccess();
     } catch (error) {
-      setSubmitError(extractApiErrorMessage(error, "Failed to delete transaction."));
+      setSubmitError(extractApiErrorMessage(error, "Không thể xóa giao dịch."));
+    }
+  };
+
+  const handleTypeSwitch = (nextType: "INCOME" | "EXPENSE") => {
+    setType(nextType);
+    if (nextType === "INCOME") {
+      setGoalId(0);
+      setCategoryId(0);
+      setCategorySelection("0");
+      return;
+    }
+    if (!categorySelection) {
+      setCategorySelection("0");
     }
   };
 
@@ -404,10 +570,10 @@ export function TransactionModal({
       <div className="w-full max-w-lg rounded-2xl border border-border bg-surface p-6 shadow-lg">
         <div className="mb-6 flex items-center justify-between">
           <h2 className="text-xl font-bold tracking-tight text-text">
-            {mode === "ADD" ? "Add Transaction" : "Edit Transaction"}
+            {mode === "ADD" ? "Thêm giao dịch" : "Sửa giao dịch"}
           </h2>
           <button onClick={onClose} className="text-muted transition-colors hover:text-text">
-            &times; Close
+            &times; Đóng
           </button>
         </div>
 
@@ -418,31 +584,31 @@ export function TransactionModal({
               className={`flex-1 rounded-md py-1.5 text-sm font-medium transition-colors ${
                 type === "EXPENSE" ? "bg-surface text-text shadow-sm" : "text-muted hover:text-text"
               }`}
-              onClick={() => setType("EXPENSE")}
+              onClick={() => handleTypeSwitch("EXPENSE")}
             >
-              Expense
+              Chi tiêu
             </button>
             <button
               type="button"
               className={`flex-1 rounded-md py-1.5 text-sm font-medium transition-colors ${
                 type === "INCOME" ? "bg-surface text-text shadow-sm" : "text-muted hover:text-text"
               }`}
-              onClick={() => setType("INCOME")}
+              onClick={() => handleTypeSwitch("INCOME")}
             >
-              Income
+              Thu nhập
             </button>
           </div>
         ) : null}
 
         <div className="space-y-4">
           <label className="block">
-            <span className="mb-1 block text-sm font-medium text-text">Account</span>
+            <span className="mb-1 block text-sm font-medium text-text">Tài khoản</span>
             <select
               value={accountId}
               onChange={(event) => setAccountId(Number(event.target.value))}
               className="focus-ring w-full rounded-md border border-border bg-bg px-3 py-2 text-text"
             >
-              <option value={0}>Select account</option>
+              <option value={0}>Chọn tài khoản</option>
               {(accountsQuery.data || []).map((row) => (
                 <option key={row.AccountID} value={row.AccountID}>
                   {row.BankCode} - {row.BankName}
@@ -453,32 +619,67 @@ export function TransactionModal({
 
           {type === "EXPENSE" ? (
             <label className="block">
-              <span className="mb-1 block text-sm font-medium text-text">Category</span>
+              <span className="mb-1 block text-sm font-medium text-text">Danh mục</span>
               <select
-                value={categoryId}
+                value={categorySelection}
                 onChange={(event) => {
                   setCategoryTouched(true);
-                  setCategoryId(Number(event.target.value));
+                  setCategorySelection(event.target.value);
                 }}
                 className="focus-ring w-full rounded-md border border-border bg-bg px-3 py-2 text-text"
               >
-                <option value={0}>Select category</option>
+                <option value="0">Chọn danh mục</option>
+                <optgroup label="Mục tiêu">
+                  <option value={SPECIAL_CATEGORY_SAVE_UP}>Tích lũy</option>
+                  <option value={SPECIAL_CATEGORY_PAY_DOWN}>Trả nợ</option>
+                </optgroup>
                 {(categoriesQuery.data || []).map((row) => (
-                  <option key={row.CategoryID} value={row.CategoryID}>
-                    {row.CategoryName}
+                  <option key={row.CategoryID} value={String(row.CategoryID)}>
+                    {getCategoryIcon(row.IconEmoji, row.CategoryName)} {row.CategoryName}
                   </option>
                 ))}
               </select>
-              {suggestedCategoryName ? (
+              {selectedGoalBucket ? (
                 <p className="mt-2 text-xs text-muted">
-                  Suggested category: <span className="font-semibold text-primary">{suggestedCategoryName}</span>
+                  Chọn mục tiêu bạn muốn ghi nhận đóng góp ở phần bên dưới.
+                </p>
+              ) : suggestedCategoryName ? (
+                <p className="mt-2 text-xs text-muted">
+                  Gợi ý danh mục: <span className="font-semibold text-primary">{suggestedCategoryName}</span>
+                </p>
+              ) : null}
+            </label>
+          ) : null}
+
+          {type === "EXPENSE" && selectedGoalBucket ? (
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium text-text">
+                {selectedGoalBucket === "SAVE_UP" ? "Khoản mục tích lũy" : "Khoản mục trả nợ"}
+              </span>
+              <select
+                value={goalId}
+                onChange={(event) => setGoalId(Number(event.target.value))}
+                className="focus-ring w-full rounded-md border border-border bg-bg px-3 py-2 text-text"
+              >
+                <option value={0}>Chọn mục tiêu</option>
+                {goalModeOptions.map((goal) => (
+                  <option key={`goal-${goal.GoalID}`} value={goal.GoalID}>
+                    {goal.GoalName}
+                  </option>
+                ))}
+              </select>
+              {selectedGoal ? (
+                <p className="mt-2 text-xs text-muted">
+                  {selectedGoalBucket === "PAY_DOWN"
+                    ? "Khoản chi này sẽ được ghi nhận vào tiến độ trả nợ."
+                    : "Khoản chi này sẽ được ghi nhận vào tiến độ tích lũy."}
                 </p>
               ) : null}
             </label>
           ) : null}
 
           <label className="block">
-            <span className="mb-1 block text-sm font-medium text-text">Amount</span>
+            <span className="mb-1 block text-sm font-medium text-text">Số tiền</span>
             <input
               value={amount}
               onChange={(event) => setAmount(formatAmountInput(event.target.value))}
@@ -489,7 +690,7 @@ export function TransactionModal({
           </label>
 
           <label className="block">
-            <span className="mb-1 block text-sm font-medium text-text">Date</span>
+            <span className="mb-1 block text-sm font-medium text-text">Ngày</span>
             <input
               value={transactionDate}
               onChange={(event) => setTransactionDate(event.target.value)}
@@ -499,19 +700,19 @@ export function TransactionModal({
           </label>
 
           <label className="block">
-            <span className="mb-1 block text-sm font-medium text-text">Description / Note (optional)</span>
+            <span className="mb-1 block text-sm font-medium text-text">Mô tả / Ghi chú (tùy chọn)</span>
             <input
               value={description}
               onChange={(event) => setDescription(event.target.value)}
               className="focus-ring w-full rounded-md border border-border bg-bg px-3 py-2 text-text"
-              placeholder="E.g., Groceries or Salary"
+              placeholder="Ví dụ: Đi chợ hoặc Lương tháng"
             />
           </label>
 
           {duplicateMatches.length > 0 ? (
             <div className="rounded-xl border border-primary/40 bg-primary/10 p-3 text-sm text-primary">
-              Potential duplicate detected: {duplicateMatches.length} similar transaction
-              {duplicateMatches.length > 1 ? "s" : ""}. You can still save if this is intentional.
+              Phát hiện {duplicateMatches.length} giao dịch có khả năng trùng lặp.
+              Bạn vẫn có thể lưu nếu chắc chắn đây là giao dịch mới.
             </div>
           ) : null}
 
@@ -528,21 +729,21 @@ export function TransactionModal({
                 disabled={isPending}
                 className="rounded-md border border-danger/40 px-4 py-2 text-sm font-semibold text-danger hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Delete
+                Xóa
               </button>
             ) : null}
             <button
               onClick={onClose}
               className="rounded-md border border-border px-4 py-2 text-sm font-medium text-text hover:bg-surface-hover"
             >
-              Cancel
+              Hủy
             </button>
             <button
               onClick={submit}
               disabled={isPending}
               className="focus-ring rounded-md bg-primary px-4 py-2 text-sm font-bold text-bg transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isPending ? "Saving..." : "Save Transaction"}
+              {isPending ? "Đang lưu..." : "Lưu giao dịch"}
             </button>
           </div>
         </div>

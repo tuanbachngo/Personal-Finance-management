@@ -12,14 +12,13 @@ if (-not (Test-Path $mysqlExe)) {
 }
 
 $scriptFiles = @(
-    "database/schema.sql"
-    "database/sample_data.sql"
-    "database/views.sql"
-    "database/functions.sql"
-    "database/triggers.sql"
-    "database/procedures.sql"
-    "database/queries.sql"
-    "database/security.sql"
+    "database/schema.sql"       # 1. Tables, indexes, constraints
+    "database/views.sql"        # 2. Views (depend on tables)
+    "database/functions.sql"    # 3. SQL functions (depend on tables)
+    "database/triggers.sql"     # 4. Triggers (depend on tables) — MUST be before sample_data
+    "database/procedures.sql"   # 5. Stored procedures
+    "database/sample_data.sql"  # 6. Seed data (triggers must exist first)
+    "database/security.sql"     # 7. Grants and security settings
 )
 
 $args = @(

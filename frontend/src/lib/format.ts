@@ -16,10 +16,11 @@ function toDdMmYyyy(parsed: Date): string {
 }
 
 export function formatCurrency(value: number): string {
-  return new Intl.NumberFormat("vi-VN", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  }).format(value);
+  const normalized = Number.isFinite(value) ? value : 0;
+  return `${new Intl.NumberFormat("vi-VN", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  }).format(Math.round(normalized))} ₫`;
 }
 
 export function formatDateTime(value: string | null | undefined): string {
@@ -62,4 +63,3 @@ export function formatDate(value: string | null | undefined): string {
   }
   return toDdMmYyyy(parsed);
 }
-

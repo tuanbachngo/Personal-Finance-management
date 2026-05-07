@@ -13,6 +13,7 @@ import os
 import re
 import secrets
 import calendar
+import unicodedata
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, List, Optional
@@ -75,6 +76,7 @@ class FinanceService:
     LOCK_WINDOW_MINUTES = 15
     LOCK_DURATION_MINUTES = 15
     SESSION_TIMEOUT_MINUTES = 30
+    REMINDER_STALE_DAYS = 7
 
     def __init__(self, connection) -> None:
         self.connection = connection
@@ -413,6 +415,14 @@ class FinanceService:
     def _now() -> datetime:
         return datetime.now()
 
+    def _start_transaction_if_needed(self) -> None:
+        try:
+            in_tx = bool(getattr(self.connection, "in_transaction", False))
+        except Exception:
+            in_tx = False
+        if not in_tx:
+            self.connection.start_transaction()
+
     @staticmethod
     def _normalize_email(email: str) -> str:
         return (email or "").strip().lower()
@@ -499,7 +509,45 @@ class FinanceService:
     def _validate_category(self, category_id: int) -> None:
         category_ids = {row["CategoryID"] for row in self.report_repo.get_all_categories()}
         if category_id not in category_ids:
-            raise ValueError(f"CategoryID {category_id} does not exist.")
+            raise ValueError(f"Danh mục {category_id} không tồn tại.")
+
+    @staticmethod
+    def _normalize_text_for_match(value: Any) -> str:
+        raw = str(value or "")
+        normalized = unicodedata.normalize("NFD", raw)
+        no_accents = "".join(ch for ch in normalized if unicodedata.category(ch) != "Mn")
+        return re.sub(r"\s+", " ", no_accents).strip().lower()
+
+    def _find_expense_category_id_by_hints(self, hints: List[str]) -> Optional[int]:
+        normalized_hints = [self._normalize_text_for_match(item) for item in hints if item]
+        if not normalized_hints:
+            return None
+        for row in self.report_repo.get_all_categories():
+            normalized_name = self._normalize_text_for_match(row.get("CategoryName"))
+            if any(hint in normalized_name for hint in normalized_hints):
+                try:
+                    return int(row["CategoryID"])
+                except (TypeError, ValueError, KeyError):
+                    continue
+        return None
+
+    def _resolve_goal_linked_expense_category_id(
+        self,
+        fallback_category_id: int,
+        contribution_type: Optional[str],
+    ) -> int:
+        normalized_type = str(contribution_type or "").strip().upper()
+        if normalized_type == "SAVE_UP":
+            matched = self._find_expense_category_id_by_hints(
+                ["tich luy", "tiet kiem", "save up", "save"]
+            )
+            return matched if matched is not None else fallback_category_id
+        if normalized_type == "PAY_DOWN":
+            matched = self._find_expense_category_id_by_hints(
+                ["tra no", "no va tra gop", "tra gop", "debt", "loan"]
+            )
+            return matched if matched is not None else fallback_category_id
+        return fallback_category_id
 
     def _validate_income_exists(self, income_id: int) -> None:
         if not self.income_repo.get_income_by_id(income_id):
@@ -581,19 +629,56 @@ class FinanceService:
         return normalized or None
 
     def _normalize_fixed_expense_items(
-        self, items: Optional[List[Dict[str, Any]]]
+        self,
+        items: Optional[List[Dict[str, Any]]],
+        *,
+        require_category: bool = False,
     ) -> List[Dict[str, Any]]:
         if items is None:
             return []
+
+        category_rows = self.report_repo.get_all_categories()
+        category_map: Dict[int, Dict[str, str]] = {
+            int(row["CategoryID"]): {
+                "name": str(row.get("CategoryName", "")),
+                "icon": str(row.get("IconEmoji", "💸") or "💸"),
+            }
+            for row in category_rows
+        }
+
         normalized: List[Dict[str, Any]] = []
         for raw in items:
             if not isinstance(raw, dict):
                 continue
-            item_name = str(raw.get("item_name", "")).strip()
+            item_name = str(raw.get("item_name", raw.get("name", ""))).strip()
             if not item_name:
                 continue
+
             amount = self._validate_non_negative_amount(raw.get("amount", 0), "Fixed expense amount")
-            normalized.append({"item_name": item_name[:100], "amount": float(amount)})
+            category_id_raw = raw.get("category_id")
+            category_id: Optional[int] = None
+            if category_id_raw not in (None, "", 0):
+                try:
+                    category_id = int(category_id_raw)
+                except (TypeError, ValueError):
+                    raise ValueError("Danh mục của khoản chi cố định không hợp lệ.") from None
+                if category_id not in category_map:
+                    raise ValueError(f"CategoryID {category_id} does not exist.")
+
+            if require_category and category_id is None:
+                raise ValueError("Mỗi khoản chi cố định phải có danh mục.")
+
+            category_name = category_map.get(category_id, {}).get("name") if category_id is not None else None
+            category_icon = category_map.get(category_id, {}).get("icon") if category_id is not None else "💸"
+            normalized.append(
+                {
+                    "item_name": item_name[:100],
+                    "amount": float(amount),
+                    "category_id": category_id,
+                    "category_name": category_name,
+                    "category_icon": category_icon or "💸",
+                }
+            )
         return normalized
 
     @staticmethod
@@ -1634,6 +1719,60 @@ class FinanceService:
             raise ValueError(f"GoalID {goal_id} does not belong to UserID {user_id}.")
         return row
 
+    @staticmethod
+    def _normalize_transaction_type_label(transaction_type: str) -> str:
+        normalized = (transaction_type or "").strip().upper()
+        if normalized not in {"INCOME", "EXPENSE"}:
+            raise ValueError("Transaction type must be INCOME or EXPENSE.")
+        return normalized
+
+    def _resolve_goal_link_payload(
+        self,
+        user_id: int,
+        transaction_type: str,
+        goal_id: Optional[int],
+    ) -> Optional[Dict[str, Any]]:
+        if goal_id is None:
+            return None
+        try:
+            normalized_goal_id = int(goal_id)
+        except (TypeError, ValueError):
+            raise ValueError("GoalID is invalid.") from None
+        if normalized_goal_id <= 0:
+            return None
+
+        normalized_transaction_type = self._normalize_transaction_type_label(transaction_type)
+        goal_row = self._validate_goal_belongs_to_user(normalized_goal_id, user_id)
+        goal_type = self._validate_goal_type(goal_row.get("GoalType", "SAVE_UP"))
+
+        if goal_type == "PAY_DOWN":
+            contribution_type = "DEPOSIT"
+        elif normalized_transaction_type == "INCOME":
+            contribution_type = "DEPOSIT"
+        else:
+            contribution_type = "WITHDRAW"
+
+        return {
+            "goal_id": int(goal_row["GoalID"]),
+            "goal_name": goal_row.get("GoalName"),
+            "goal_type": goal_type,
+            "contribution_type": contribution_type,
+        }
+
+    @staticmethod
+    def _build_goal_contribution_description(
+        base_description: str,
+        transaction_type: str,
+        goal_name: Optional[str],
+    ) -> str:
+        normalized_description = (base_description or "").strip()
+        transaction_label = "thu nhập" if transaction_type == "INCOME" else "chi tiêu"
+        goal_suffix = f" • mục tiêu: {goal_name}" if goal_name else ""
+
+        if normalized_description:
+            return f"{normalized_description} • liên kết {transaction_label}{goal_suffix}"
+        return f"Liên kết tự động từ giao dịch {transaction_label}{goal_suffix}"
+
     def list_goals(self, user_id: Optional[int] = None) -> List[Dict[str, Any]]:
         scope_user_id = self._resolve_user_scope(user_id)
         if scope_user_id is not None:
@@ -1812,7 +1951,8 @@ class FinanceService:
         amount: float,
         description: str = "",
         transaction_date: Optional[Any] = None,
-    ) -> None:
+        goal_id: Optional[int] = None,
+    ) -> int:
         user_id = self._resolve_user_scope(user_id)
         if user_id is None:
             raise ValueError("User scope is required to create income.")
@@ -1820,13 +1960,65 @@ class FinanceService:
         self._validate_account(user_id, account_id)
         self._validate_positive_amount(amount)
         normalized_date = self._normalize_date_input(transaction_date, "Transaction date")
-        self.income_repo.add_income(
+        goal_link_payload = self._resolve_goal_link_payload(
             user_id=user_id,
-            account_id=account_id,
-            amount=amount,
-            description=description,
-            transaction_date=normalized_date,
+            transaction_type="INCOME",
+            goal_id=goal_id,
         )
+
+        if goal_link_payload is None:
+            return self.income_repo.add_income(
+                user_id=user_id,
+                account_id=account_id,
+                amount=amount,
+                description=description,
+                transaction_date=normalized_date,
+            )
+
+        cursor = self.connection.cursor(dictionary=True)
+        try:
+            self._start_transaction_if_needed()
+            income_id = self.income_repo.add_income(
+                user_id=user_id,
+                account_id=account_id,
+                amount=amount,
+                description=description,
+                transaction_date=normalized_date,
+                cursor=cursor,
+                commit=False,
+            )
+            contribution_id = self.goal_repo.add_goal_contribution(
+                goal_id=goal_link_payload["goal_id"],
+                user_id=user_id,
+                account_id=account_id,
+                amount=amount,
+                contribution_type=goal_link_payload["contribution_type"],
+                contribution_date=normalized_date or date.today(),
+                description=self._build_goal_contribution_description(
+                    base_description=description,
+                    transaction_type="INCOME",
+                    goal_name=goal_link_payload.get("goal_name"),
+                ),
+                cursor=cursor,
+                commit=False,
+            )
+            self.goal_repo.create_transaction_goal_link(
+                user_id=user_id,
+                goal_id=goal_link_payload["goal_id"],
+                contribution_id=contribution_id,
+                source_type="INCOME",
+                source_transaction_id=income_id,
+                contribution_type=goal_link_payload["contribution_type"],
+                cursor=cursor,
+                commit=False,
+            )
+            self.connection.commit()
+            return income_id
+        except Exception:
+            self.connection.rollback()
+            raise
+        finally:
+            cursor.close()
 
     def create_expense(
         self,
@@ -1836,7 +2028,8 @@ class FinanceService:
         amount: float,
         description: str = "",
         transaction_date: Optional[Any] = None,
-    ) -> None:
+        goal_id: Optional[int] = None,
+    ) -> int:
         user_id = self._resolve_user_scope(user_id)
         if user_id is None:
             raise ValueError("User scope is required to create expense.")
@@ -1845,20 +2038,82 @@ class FinanceService:
         self._validate_category(category_id)
         self._validate_positive_amount(amount)
         normalized_date = self._normalize_date_input(transaction_date, "Transaction date")
+        goal_link_payload = self._resolve_goal_link_payload(
+            user_id=user_id,
+            transaction_type="EXPENSE",
+            goal_id=goal_id,
+        )
+        resolved_goal_category_id = category_id
+        if goal_link_payload is not None:
+            resolved_goal_category_id = self._resolve_goal_linked_expense_category_id(
+                fallback_category_id=category_id,
+                contribution_type=goal_link_payload.get("contribution_type"),
+            )
+
+        if goal_link_payload is None:
+            try:
+                return self.expense_repo.add_expense(
+                    user_id=user_id,
+                    account_id=account_id,
+                    category_id=category_id,
+                    amount=amount,
+                    description=description,
+                    transaction_date=normalized_date,
+                )
+            except Exception as err:
+                mapped_error = self._map_expense_db_error(err)
+                if mapped_error is not None:
+                    raise mapped_error from err
+                raise
+
+        cursor = self.connection.cursor(dictionary=True)
         try:
-            self.expense_repo.add_expense(
+            self._start_transaction_if_needed()
+            expense_id = self.expense_repo.add_expense(
                 user_id=user_id,
                 account_id=account_id,
-                category_id=category_id,
+                category_id=resolved_goal_category_id,
                 amount=amount,
                 description=description,
                 transaction_date=normalized_date,
+                cursor=cursor,
+                commit=False,
             )
+            contribution_id = self.goal_repo.add_goal_contribution(
+                goal_id=goal_link_payload["goal_id"],
+                user_id=user_id,
+                account_id=account_id,
+                amount=amount,
+                contribution_type=goal_link_payload["contribution_type"],
+                contribution_date=normalized_date or date.today(),
+                description=self._build_goal_contribution_description(
+                    base_description=description,
+                    transaction_type="EXPENSE",
+                    goal_name=goal_link_payload.get("goal_name"),
+                ),
+                cursor=cursor,
+                commit=False,
+            )
+            self.goal_repo.create_transaction_goal_link(
+                user_id=user_id,
+                goal_id=goal_link_payload["goal_id"],
+                contribution_id=contribution_id,
+                source_type="EXPENSE",
+                source_transaction_id=expense_id,
+                contribution_type=goal_link_payload["contribution_type"],
+                cursor=cursor,
+                commit=False,
+            )
+            self.connection.commit()
+            return expense_id
         except Exception as err:
+            self.connection.rollback()
             mapped_error = self._map_expense_db_error(err)
             if mapped_error is not None:
                 raise mapped_error from err
             raise
+        finally:
+            cursor.close()
 
     def edit_income(
         self,
@@ -1868,6 +2123,7 @@ class FinanceService:
         amount: float,
         description: str = "",
         transaction_date: Optional[Any] = None,
+        goal_id: Optional[int] = None,
     ) -> None:
         user_id = self._resolve_user_scope(user_id)
         if user_id is None:
@@ -1878,14 +2134,83 @@ class FinanceService:
         self._validate_account(user_id, account_id)
         self._validate_positive_amount(amount)
         normalized_date = self._normalize_date_input(transaction_date, "Transaction date")
-        self.income_repo.update_income(
-            income_id,
-            user_id,
-            account_id,
-            amount,
-            normalized_date,
-            description,
+        goal_link_payload = self._resolve_goal_link_payload(
+            user_id=user_id,
+            transaction_type="INCOME",
+            goal_id=goal_id,
         )
+        existing_link = self.goal_repo.get_transaction_goal_link("INCOME", income_id)
+
+        if existing_link is None and goal_link_payload is None:
+            self.income_repo.update_income(
+                income_id,
+                user_id,
+                account_id,
+                amount,
+                normalized_date,
+                description,
+            )
+            return
+
+        cursor = self.connection.cursor(dictionary=True)
+        try:
+            self._start_transaction_if_needed()
+            self.income_repo.update_income(
+                income_id,
+                user_id,
+                account_id,
+                amount,
+                normalized_date,
+                description,
+                cursor=cursor,
+                commit=False,
+            )
+            if existing_link is not None:
+                self.goal_repo.delete_goal_contribution(
+                    contribution_id=int(existing_link["ContributionID"]),
+                    user_id=user_id,
+                    cursor=cursor,
+                    commit=False,
+                )
+                self.goal_repo.delete_transaction_goal_link(
+                    source_type="INCOME",
+                    source_transaction_id=income_id,
+                    cursor=cursor,
+                    commit=False,
+                )
+
+            if goal_link_payload is not None:
+                contribution_id = self.goal_repo.add_goal_contribution(
+                    goal_id=goal_link_payload["goal_id"],
+                    user_id=user_id,
+                    account_id=account_id,
+                    amount=amount,
+                    contribution_type=goal_link_payload["contribution_type"],
+                    contribution_date=normalized_date or date.today(),
+                    description=self._build_goal_contribution_description(
+                        base_description=description,
+                        transaction_type="INCOME",
+                        goal_name=goal_link_payload.get("goal_name"),
+                    ),
+                    cursor=cursor,
+                    commit=False,
+                )
+                self.goal_repo.create_transaction_goal_link(
+                    user_id=user_id,
+                    goal_id=goal_link_payload["goal_id"],
+                    contribution_id=contribution_id,
+                    source_type="INCOME",
+                    source_transaction_id=income_id,
+                    contribution_type=goal_link_payload["contribution_type"],
+                    cursor=cursor,
+                    commit=False,
+                )
+            self.connection.commit()
+        except Exception:
+            self.connection.rollback()
+            raise
+        finally:
+            cursor.close()
 
     def edit_expense(
         self,
@@ -1896,6 +2221,7 @@ class FinanceService:
         amount: float,
         description: str = "",
         transaction_date: Optional[Any] = None,
+        goal_id: Optional[int] = None,
     ) -> None:
         user_id = self._resolve_user_scope(user_id)
         if user_id is None:
@@ -1907,31 +2233,164 @@ class FinanceService:
         self._validate_category(category_id)
         self._validate_positive_amount(amount)
         normalized_date = self._normalize_date_input(transaction_date, "Transaction date")
+        goal_link_payload = self._resolve_goal_link_payload(
+            user_id=user_id,
+            transaction_type="EXPENSE",
+            goal_id=goal_id,
+        )
+        resolved_goal_category_id = category_id
+        if goal_link_payload is not None:
+            resolved_goal_category_id = self._resolve_goal_linked_expense_category_id(
+                fallback_category_id=category_id,
+                contribution_type=goal_link_payload.get("contribution_type"),
+            )
+        existing_link = self.goal_repo.get_transaction_goal_link("EXPENSE", expense_id)
+
+        if existing_link is None and goal_link_payload is None:
+            try:
+                self.expense_repo.update_expense(
+                    expense_id,
+                    user_id,
+                    account_id,
+                    category_id,
+                    amount,
+                    normalized_date,
+                    description,
+                )
+            except Exception as err:
+                mapped_error = self._map_expense_db_error(err)
+                if mapped_error is not None:
+                    raise mapped_error from err
+                raise
+            return
+
+        cursor = self.connection.cursor(dictionary=True)
         try:
+            self._start_transaction_if_needed()
             self.expense_repo.update_expense(
                 expense_id,
                 user_id,
                 account_id,
-                category_id,
+                resolved_goal_category_id if goal_link_payload is not None else category_id,
                 amount,
                 normalized_date,
                 description,
+                cursor=cursor,
+                commit=False,
             )
+            if existing_link is not None:
+                self.goal_repo.delete_goal_contribution(
+                    contribution_id=int(existing_link["ContributionID"]),
+                    user_id=user_id,
+                    cursor=cursor,
+                    commit=False,
+                )
+                self.goal_repo.delete_transaction_goal_link(
+                    source_type="EXPENSE",
+                    source_transaction_id=expense_id,
+                    cursor=cursor,
+                    commit=False,
+                )
+
+            if goal_link_payload is not None:
+                contribution_id = self.goal_repo.add_goal_contribution(
+                    goal_id=goal_link_payload["goal_id"],
+                    user_id=user_id,
+                    account_id=account_id,
+                    amount=amount,
+                    contribution_type=goal_link_payload["contribution_type"],
+                    contribution_date=normalized_date or date.today(),
+                    description=self._build_goal_contribution_description(
+                        base_description=description,
+                        transaction_type="EXPENSE",
+                        goal_name=goal_link_payload.get("goal_name"),
+                    ),
+                    cursor=cursor,
+                    commit=False,
+                )
+                self.goal_repo.create_transaction_goal_link(
+                    user_id=user_id,
+                    goal_id=goal_link_payload["goal_id"],
+                    contribution_id=contribution_id,
+                    source_type="EXPENSE",
+                    source_transaction_id=expense_id,
+                    contribution_type=goal_link_payload["contribution_type"],
+                    cursor=cursor,
+                    commit=False,
+                )
+            self.connection.commit()
         except Exception as err:
+            self.connection.rollback()
             mapped_error = self._map_expense_db_error(err)
             if mapped_error is not None:
                 raise mapped_error from err
             raise
+        finally:
+            cursor.close()
 
     def remove_income(self, income_id: int) -> None:
         self._enforce_income_access_by_id(income_id)
         self._validate_income_exists(income_id)
-        self.income_repo.delete_income(income_id)
+        income_row = self.income_repo.get_income_by_id(income_id)
+        existing_link = self.goal_repo.get_transaction_goal_link("INCOME", income_id)
+        if income_row is None or existing_link is None:
+            self.income_repo.delete_income(income_id)
+            return
+
+        cursor = self.connection.cursor(dictionary=True)
+        try:
+            self._start_transaction_if_needed()
+            self.goal_repo.delete_goal_contribution(
+                contribution_id=int(existing_link["ContributionID"]),
+                user_id=int(income_row["UserID"]),
+                cursor=cursor,
+                commit=False,
+            )
+            self.goal_repo.delete_transaction_goal_link(
+                source_type="INCOME",
+                source_transaction_id=income_id,
+                cursor=cursor,
+                commit=False,
+            )
+            self.income_repo.delete_income(income_id, cursor=cursor, commit=False)
+            self.connection.commit()
+        except Exception:
+            self.connection.rollback()
+            raise
+        finally:
+            cursor.close()
 
     def remove_expense(self, expense_id: int) -> None:
         self._enforce_expense_access_by_id(expense_id)
         self._validate_expense_exists(expense_id)
-        self.expense_repo.delete_expense(expense_id)
+        expense_row = self.expense_repo.get_expense_by_id(expense_id)
+        existing_link = self.goal_repo.get_transaction_goal_link("EXPENSE", expense_id)
+        if expense_row is None or existing_link is None:
+            self.expense_repo.delete_expense(expense_id)
+            return
+
+        cursor = self.connection.cursor(dictionary=True)
+        try:
+            self._start_transaction_if_needed()
+            self.goal_repo.delete_goal_contribution(
+                contribution_id=int(existing_link["ContributionID"]),
+                user_id=int(expense_row["UserID"]),
+                cursor=cursor,
+                commit=False,
+            )
+            self.goal_repo.delete_transaction_goal_link(
+                source_type="EXPENSE",
+                source_transaction_id=expense_id,
+                cursor=cursor,
+                commit=False,
+            )
+            self.expense_repo.delete_expense(expense_id, cursor=cursor, commit=False)
+            self.connection.commit()
+        except Exception:
+            self.connection.rollback()
+            raise
+        finally:
+            cursor.close()
 
     def create_budget_plan(
         self,
@@ -2076,12 +2535,8 @@ class FinanceService:
         goal_contribution_target = float((settings_row or {}).get("GoalContributionTarget", 0.0) or 0.0)
         emergency_buffer = float((settings_row or {}).get("EmergencyBuffer", 0.0) or 0.0)
 
-        available_to_budget = (
-            expected_income
-            - fixed_expense_estimate
-            - goal_contribution_target
-            - emergency_buffer
-        )
+        gross_capacity = expected_income - goal_contribution_target - emergency_buffer
+        available_to_budget = gross_capacity - fixed_expense_estimate
 
         plans = self.report_repo.get_budget_plans_by_user(
             user_id=user_id,
@@ -2094,13 +2549,24 @@ class FinanceService:
             user_id=user_id,
         )
         status_by_category = {int(row["CategoryID"]): row for row in status_rows}
+        monthly_expense_rows = self.report_repo.get_monthly_expense_totals_by_category(
+            user_id=user_id,
+            year=budget_year,
+            month=budget_month,
+        )
+        monthly_expense_by_category = {
+            int(row["CategoryID"]): float(row.get("SpentAmount", 0.0) or 0.0)
+            for row in monthly_expense_rows
+            if row.get("CategoryID") is not None
+        }
         progress = self._get_period_progress(budget_year, budget_month)
         days_left = int(progress["days_left"])
         elapsed_ratio = float(progress["elapsed_ratio"])
         first_day, _, _ = self._month_boundaries(budget_year, budget_month)
 
         categories: List[Dict[str, Any]] = []
-        total_planned = 0.0
+        fixed_expense_cards: List[Dict[str, Any]] = []
+        total_planned_variable = 0.0
         total_spent = 0.0
         has_high_historical_plan = False
         has_over_pace = False
@@ -2109,7 +2575,13 @@ class FinanceService:
             category_id = int(plan["CategoryID"])
             status_row = status_by_category.get(category_id)
             planned_amount = float(plan["PlannedAmount"])
-            spent_amount = float((status_row or {}).get("SpentAmount", 0.0) or 0.0)
+            spent_amount = float(
+                (status_row or {}).get(
+                    "SpentAmount",
+                    monthly_expense_by_category.get(category_id, 0.0),
+                )
+                or 0.0
+            )
             remaining_budget = planned_amount - spent_amount
             safe_remaining = max(remaining_budget, 0.0)
 
@@ -2134,6 +2606,7 @@ class FinanceService:
                     "budget_id": int(plan["BudgetID"]),
                     "category_id": category_id,
                     "category_name": plan["CategoryName"],
+                    "category_icon": str(plan.get("CategoryIcon", "💸") or "💸"),
                     "planned_amount": planned_amount,
                     "spent_amount": spent_amount,
                     "remaining_budget": remaining_budget,
@@ -2151,40 +2624,94 @@ class FinanceService:
                 }
             )
 
-            total_planned += planned_amount
+            total_planned_variable += planned_amount
             total_spent += spent_amount
 
-        remaining_to_allocate = available_to_budget - total_planned
-        remaining_budget_total = total_planned - total_spent
+        for idx, item in enumerate(fixed_expense_items):
+            cat_id = item.get("category_id")
+            numeric_cat_id = int(cat_id) if cat_id else None
+            planned = float(item.get("amount", 0.0) or 0.0)
+            spent = (
+                float(monthly_expense_by_category.get(numeric_cat_id, 0.0))
+                if numeric_cat_id is not None
+                else 0.0
+            )
+            remaining = planned - spent
+            usage = (spent / planned * 100.0) if planned > 0 else 0.0
+            safe_remaining = max(remaining, 0.0)
+            safe_daily = safe_remaining / days_left if days_left > 0 else 0.0
+            safe_weekly = safe_daily * 7
+            pace = self._determine_pace_status(planned, spent, elapsed_ratio)
+            alert = "EXCEEDED" if spent > planned else (
+                "WARNING" if usage >= 80.0 else "NORMAL"
+            )
+            fixed_expense_cards.append(
+                {
+                    "card_id": f"fixed-{idx + 1}",
+                    "item_name": str(item.get("item_name", "Khoản cố định")),
+                    "category_id": numeric_cat_id,
+                    "category_name": str(item.get("category_name") or "Chi phí cố định"),
+                    "category_icon": str(item.get("category_icon") or "💸"),
+                    "planned_amount": planned,
+                    "spent_amount": spent,
+                    "remaining_amount": remaining,
+                    "usage_percent": usage,
+                    "alert_level": alert,
+                    "spending_pace_status": pace,
+                    "safe_daily_spend": safe_daily,
+                    "safe_weekly_spend": safe_weekly,
+                    "days_left_in_month": days_left,
+                }
+            )
 
-        if total_planned > 0 and available_to_budget <= 0:
+        tracked_category_ids = {
+            int(plan["CategoryID"])
+            for plan in plans
+            if plan.get("CategoryID") is not None
+        }
+        tracked_category_ids.update(
+            int(item["category_id"])
+            for item in fixed_expense_items
+            if item.get("category_id") is not None
+        )
+        if tracked_category_ids:
+            total_spent = sum(
+                monthly_expense_by_category.get(category_id, 0.0)
+                for category_id in tracked_category_ids
+            )
+
+        total_planned_budget = total_planned_variable + fixed_expense_estimate
+        remaining_to_allocate = gross_capacity - total_planned_budget
+        remaining_budget_total = total_planned_budget - total_spent
+
+        if total_planned_budget > 0 and gross_capacity <= 0:
             budget_health = "OVERPLANNED"
-        elif available_to_budget > 0 and total_planned > available_to_budget * 1.2:
+        elif gross_capacity > 0 and total_planned_budget > gross_capacity * 1.2:
             budget_health = "OVERPLANNED"
-        elif (available_to_budget > 0 and total_planned > available_to_budget * 1.1) or has_over_pace:
+        elif (gross_capacity > 0 and total_planned_budget > gross_capacity * 1.1) or has_over_pace:
             budget_health = "RISKY"
-        elif total_planned > available_to_budget or emergency_buffer <= 0 or has_high_historical_plan:
+        elif total_planned_budget > gross_capacity or emergency_buffer <= 0 or has_high_historical_plan:
             budget_health = "CAUTION"
         else:
             budget_health = "HEALTHY"
 
         warnings: List[str] = []
-        if total_planned > available_to_budget:
+        if total_planned_budget > gross_capacity:
             warnings.append(
-                "Your planned budget is higher than your safe available amount."
+                "Ngân sách đã lập kế hoạch đang cao hơn mức an toàn có thể phân bổ."
             )
-        if available_to_budget > 0 and total_planned > available_to_budget * 1.2:
+        if gross_capacity > 0 and total_planned_budget > gross_capacity * 1.2:
             warnings.append(
-                "This budget looks overplanned. Consider reducing flexible categories."
+                "Ngân sách có dấu hiệu vượt kế hoạch mạnh. Hãy cân nhắc giảm các danh mục linh hoạt."
             )
         if emergency_buffer <= 0:
-            warnings.append("Emergency buffer is zero. Add a safety buffer for unexpected expenses.")
+            warnings.append("Bạn chưa có quỹ dự phòng khẩn cấp cho tháng này.")
         if has_high_historical_plan:
             warnings.append(
-                "At least one category budget is more than 150% of recent spending history."
+                "Có danh mục vượt quá 150% mức chi tiêu trung bình gần đây."
             )
         if has_over_pace:
-            warnings.append("Current spending pace is high for this period.")
+            warnings.append("Tốc độ chi tiêu hiện tại đang cao so với tiến độ tháng.")
 
         return {
             "user_id": user_id,
@@ -2196,12 +2723,13 @@ class FinanceService:
             "goal_contribution_target": goal_contribution_target,
             "emergency_buffer": emergency_buffer,
             "available_to_budget": available_to_budget,
-            "total_planned_budget": total_planned,
+            "total_planned_budget": total_planned_budget,
             "remaining_to_allocate": remaining_to_allocate,
             "total_spent": total_spent,
             "remaining_budget": remaining_budget_total,
             "budget_health": budget_health,
             "warnings": warnings,
+            "fixed_expense_cards": fixed_expense_cards,
             "categories": categories,
             "created_at": settings_row.get("CreatedAt") if settings_row else None,
             "updated_at": settings_row.get("UpdatedAt") if settings_row else None,
@@ -2252,7 +2780,10 @@ class FinanceService:
         validated_fixed_expense = self._validate_non_negative_amount(
             fixed_expense_estimate, "Fixed expense estimate"
         )
-        normalized_fixed_items = self._normalize_fixed_expense_items(fixed_expense_items)
+        normalized_fixed_items = self._normalize_fixed_expense_items(
+            fixed_expense_items,
+            require_category=True,
+        )
         if normalized_fixed_items:
             validated_fixed_expense = float(
                 sum(float(item["amount"]) for item in normalized_fixed_items)
@@ -2305,7 +2836,7 @@ class FinanceService:
             remaining_after = remaining_before - float(amount)
             return {
                 "decision": "CAUTION",
-                "message": "No budget plan found for this category in the selected month.",
+                "message": "Danh mục này chưa có kế hoạch ngân sách trong tháng đã chọn.",
                 "remaining_before": remaining_before,
                 "remaining_after": remaining_after,
                 "safe_daily_spend": 0.0,
@@ -2327,17 +2858,17 @@ class FinanceService:
         if int(category_row.get("is_soft_locked", 0)) == 1:
             decision = "SOFT_LOCKED"
             message = (
-                "You soft-locked this category to reduce spending. Think twice before continuing."
+                "Danh mục này đang được khóa mềm để hạn chế chi tiêu. Hãy cân nhắc trước khi tiếp tục."
             )
         elif float(amount) > remaining_before:
             decision = "EXCEEDS_BUDGET"
-            message = "This purchase exceeds your remaining category budget."
+            message = "Khoản chi này sẽ vượt ngân sách còn lại của danh mục."
         elif safe_daily_spend > 0 and float(amount) > safe_daily_spend * 2:
             decision = "CAUTION"
-            message = "This amount is more than 2x your safe daily spending for this category."
+            message = "Số tiền này lớn hơn 2 lần mức chi tiêu an toàn theo ngày của danh mục."
         else:
             decision = "SAFE"
-            message = "This purchase is within your remaining budget."
+            message = "Khoản chi này vẫn nằm trong ngân sách còn lại."
 
         return {
             "decision": decision,
@@ -2462,9 +2993,20 @@ class FinanceService:
             else self.account_repo.get_accounts_by_user(user_id)
         )
         bank_name_map = {row["AccountID"]: row.get("BankName") for row in account_rows}
+        income_ids = [int(row["IncomeID"]) for row in income_rows]
+        expense_ids = [int(row["ExpenseID"]) for row in expense_rows]
+        income_goal_links = self.goal_repo.get_transaction_goal_links_by_sources("INCOME", income_ids)
+        expense_goal_links = self.goal_repo.get_transaction_goal_links_by_sources("EXPENSE", expense_ids)
+        income_goal_map = {
+            int(row["SourceTransactionID"]): row for row in income_goal_links
+        }
+        expense_goal_map = {
+            int(row["SourceTransactionID"]): row for row in expense_goal_links
+        }
 
         unified = []
         for row in income_rows:
+            goal_link = income_goal_map.get(int(row["IncomeID"]))
             unified.append(
                 {
                     "TransactionType": "INCOME",
@@ -2477,9 +3019,14 @@ class FinanceService:
                     "Amount": row["Amount"],
                     "TransactionDate": row["IncomeDate"],
                     "Description": row["Description"],
+                    "GoalID": int(goal_link["GoalID"]) if goal_link else None,
+                    "GoalName": goal_link.get("GoalName") if goal_link else None,
+                    "GoalType": goal_link.get("GoalType") if goal_link else None,
+                    "GoalContributionType": goal_link.get("ContributionType") if goal_link else None,
                 }
             )
         for row in expense_rows:
+            goal_link = expense_goal_map.get(int(row["ExpenseID"]))
             unified.append(
                 {
                     "TransactionType": "EXPENSE",
@@ -2487,11 +3034,15 @@ class FinanceService:
                     "UserID": row["UserID"],
                     "AccountID": row["AccountID"],
                     "CategoryID": row["CategoryID"],
-                    "CategoryName": category_name_map.get(row["CategoryID"], "Uncategorized"),
+                    "CategoryName": category_name_map.get(row["CategoryID"], "Chưa phân loại"),
                     "BankName": bank_name_map.get(row["AccountID"]),
                     "Amount": row["Amount"],
                     "TransactionDate": row["ExpenseDate"],
                     "Description": row["Description"],
+                    "GoalID": int(goal_link["GoalID"]) if goal_link else None,
+                    "GoalName": goal_link.get("GoalName") if goal_link else None,
+                    "GoalType": goal_link.get("GoalType") if goal_link else None,
+                    "GoalContributionType": goal_link.get("ContributionType") if goal_link else None,
                 }
             )
 
@@ -2707,6 +3258,64 @@ class FinanceService:
         if user_id is None:
             return rows
         return [row for row in rows if row["UserID"] == user_id]
+
+    def get_dashboard_reminders(self, user_id: int) -> List[Dict[str, Any]]:
+        scoped_user_id = self._resolve_user_scope(user_id)
+        if scoped_user_id is None:
+            raise ValueError("User scope is required.")
+        self._validate_user(scoped_user_id)
+
+        today = date.today()
+        year = today.year
+        month = today.month
+
+        income_count = self.report_repo.get_monthly_income_count(scoped_user_id, year, month)
+        expense_count = self.report_repo.get_monthly_expense_count(scoped_user_id, year, month)
+        last_tx = self.report_repo.get_last_transaction_timestamp(scoped_user_id)
+
+        reminders: List[Dict[str, Any]] = []
+        if expense_count == 0:
+            reminders.append(
+                {
+                    "id": f"expense-missing-{year}-{month}",
+                    "type": "EXPENSE_MISSING",
+                    "title": "Bạn chưa ghi nhận chi tiêu tháng này",
+                    "message": "Tháng này bạn đã tiêu bao nhiêu rồi nhỉ? Hãy cho chúng tôi biết nhé.",
+                    "action_label": "Thêm chi tiêu",
+                    "action_href": "/transactions",
+                    "severity": "warning",
+                }
+            )
+
+        if income_count == 0:
+            reminders.append(
+                {
+                    "id": f"income-missing-{year}-{month}",
+                    "type": "INCOME_MISSING",
+                    "title": "Bạn chưa ghi nhận thu nhập tháng này",
+                    "message": "Bạn chưa ghi nhận khoản thu nhập nào trong tháng này.",
+                    "action_label": "Thêm thu nhập",
+                    "action_href": "/transactions",
+                    "severity": "info",
+                }
+            )
+
+        if isinstance(last_tx, datetime):
+            stale_days = (datetime.now() - last_tx).days
+            if stale_days >= self.REMINDER_STALE_DAYS:
+                reminders.append(
+                    {
+                        "id": f"tx-stale-{year}-{month}",
+                        "type": "STALE_TRANSACTIONS",
+                        "title": "Đã lâu rồi bạn chưa cập nhật giao dịch",
+                        "message": "Cùng cập nhật để báo cáo tài chính luôn chính xác nhé.",
+                        "action_label": "Cập nhật giao dịch",
+                        "action_href": "/transactions",
+                        "severity": "warning",
+                    }
+                )
+
+        return reminders
 
     def show_balance_history(
         self, user_id: Optional[int] = None, account_id: Optional[int] = None

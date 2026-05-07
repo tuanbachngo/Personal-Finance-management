@@ -107,7 +107,7 @@ export function NetWorthChart({ data }: Props) {
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-3">
-            <h2 className="text-lg font-semibold tracking-tight text-text">Net Worth</h2>
+            <h2 className="text-lg font-semibold tracking-tight text-text">Giá trị tài sản ròng</h2>
 
             {stats ? (
               <span
@@ -124,7 +124,7 @@ export function NetWorthChart({ data }: Props) {
           </div>
 
           <p className="mt-1 text-xs text-muted">
-            Running balance movement based on the selected time range.
+            Biến động số dư theo khoảng thời gian đã chọn.
           </p>
         </div>
 
@@ -149,7 +149,7 @@ export function NetWorthChart({ data }: Props) {
       <div className="min-h-0 flex-1">
         {filteredData.length === 0 ? (
           <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-border bg-bg">
-            <p className="text-sm text-muted">No balance history for this period.</p>
+            <p className="text-sm text-muted">Không có lịch sử số dư trong giai đoạn này.</p>
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
@@ -198,9 +198,9 @@ export function NetWorthChart({ data }: Props) {
                 }}
                 labelStyle={{ color: "#98989D" }}
                 itemStyle={{ color: "#00E5FF" }}
-                formatter={(value: number) => [formatNumber(Number(value)), "Balance"]}
+                formatter={(value: number) => [formatNumber(Number(value)), "Số dư"]}
                 labelFormatter={(label) =>
-                  `Date: ${new Date(label).toLocaleDateString("vi-VN")}`
+                  `Ngày: ${new Date(label).toLocaleDateString("vi-VN")}`
                 }
               />
 
@@ -211,7 +211,7 @@ export function NetWorthChart({ data }: Props) {
                 fill="url(#netWorthGradient)"
                 fillOpacity={1}
                 strokeWidth={3}
-                name="Balance"
+                name="Số dư"
                 dot={{ r: 2.5, strokeWidth: 2, fill: "#121212", stroke: "#00E5FF" }}
                 activeDot={{ r: 5, strokeWidth: 2, fill: "#00E5FF", stroke: "#121212" }}
               />

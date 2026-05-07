@@ -61,10 +61,10 @@ export default function UserManagementPage() {
   const createMutation = useMutation({
     mutationFn: createUserProfile,
     onSuccess: async (res) => {
-      alert(`${res.message} UserID=${res.id}`);
+      alert(`${res.message} Mã người dùng: ${res.id}`);
       await queryClient.invalidateQueries({ queryKey: ["user-profiles"] });
     },
-    onError: (error) => alert(extractApiErrorMessage(error, "Failed to create user."))
+    onError: (error) => alert(extractApiErrorMessage(error, "Không thể tạo người dùng."))
   });
 
   const updateMutation = useMutation({
@@ -74,7 +74,7 @@ export default function UserManagementPage() {
       alert(res.message);
       await queryClient.invalidateQueries({ queryKey: ["user-profiles"] });
     },
-    onError: (error) => alert(extractApiErrorMessage(error, "Failed to update user."))
+    onError: (error) => alert(extractApiErrorMessage(error, "Không thể cập nhật người dùng."))
   });
 
   const deleteMutation = useMutation({
@@ -83,7 +83,7 @@ export default function UserManagementPage() {
       alert(res.message);
       await queryClient.invalidateQueries({ queryKey: ["user-profiles"] });
     },
-    onError: (error) => alert(extractApiErrorMessage(error, "Failed to delete user."))
+    onError: (error) => alert(extractApiErrorMessage(error, "Không thể xóa người dùng."))
   });
 
   const loadSelectedForEdit = (userId: number) => {
@@ -106,9 +106,9 @@ export default function UserManagementPage() {
 
   return (
     <AuthGuard requireAdmin>
-      <AppShell title="User Management" subtitle="Admin workspace for profile list, create, edit, and delete operations.">
+      <AppShell title="Quản lý người dùng" subtitle="Khu vực quản trị: xem danh sách hồ sơ, tạo mới, cập nhật và xóa người dùng.">
         <DataTable
-          title="Users"
+          title="Danh sách người dùng"
           rows={(profilesQuery.data || []).map((row) => ({
             UserID: row.UserID,
             UserName: row.UserName,
@@ -119,17 +119,17 @@ export default function UserManagementPage() {
             IsActive: row.IsActive,
             LastLoginAt: formatDateTime(row.LastLoginAt)
           }))}
-          emptyMessage="No users found."
+          emptyMessage="Không có người dùng."
         />
 
         <div className="mt-4 rounded-lg border border-border bg-bg p-3">
-          <label className="mb-1 block text-sm text-muted">Select user for detail/edit</label>
+          <label className="mb-1 block text-sm text-muted">Chọn người dùng để xem chi tiết/chỉnh sửa</label>
           <select
             value={selectedUserId}
             onChange={(event) => loadSelectedForEdit(Number(event.target.value))}
             className="focus-ring w-full rounded-md border border-border bg-surface px-3 py-2 text-text"
           >
-            <option value={0}>Search user by name or email</option>
+            <option value={0}>Tìm người dùng theo tên hoặc email</option>
             {(profilesQuery.data || []).map((row) => (
               <option key={row.UserID} value={row.UserID}>
                 {row.UserName} ({row.Email})
@@ -141,7 +141,7 @@ export default function UserManagementPage() {
         {selectedUser ? (
           <div className="mt-4">
             <DataTable
-              title="Current profile details"
+              title="Thông tin hồ sơ hiện tại"
               rows={[
                 {
                   UserID: selectedUser.UserID,
@@ -159,10 +159,10 @@ export default function UserManagementPage() {
 
         <div className="mt-4 grid gap-4 lg:grid-cols-3">
           <div className="rounded-lg border border-border bg-bg p-3">
-            <h3 className="mb-2 text-sm text-muted">Add User</h3>
+            <h3 className="mb-2 text-sm text-muted">Thêm người dùng</h3>
             <div className="space-y-2">
               <input
-                placeholder="User name"
+                placeholder="Tên người dùng"
                 value={addForm.userName}
                 onChange={(event) => setAddForm((s) => ({ ...s, userName: event.target.value }))}
                 className="focus-ring w-full rounded-md border border-border bg-surface px-3 py-2 text-text"
@@ -174,7 +174,7 @@ export default function UserManagementPage() {
                 className="focus-ring w-full rounded-md border border-border bg-surface px-3 py-2 text-text"
               />
               <input
-                placeholder="Phone number (optional)"
+                placeholder="Số điện thoại (tùy chọn)"
                 value={addForm.phone}
                 onChange={(event) => setAddForm((s) => ({ ...s, phone: event.target.value }))}
                 className="focus-ring w-full rounded-md border border-border bg-surface px-3 py-2 text-text"
@@ -184,7 +184,7 @@ export default function UserManagementPage() {
                 onChange={(event) => setAddForm((s) => ({ ...s, bankId: Number(event.target.value) }))}
                 className="focus-ring w-full rounded-md border border-border bg-surface px-3 py-2 text-text"
               >
-                <option value={0}>Initial bank</option>
+                <option value={0}>Ngân hàng ban đầu</option>
                 {(banksQuery.data || []).map((row) => (
                   <option key={row.BankID} value={row.BankID}>
                     {row.BankCode} - {row.BankName}
@@ -192,20 +192,20 @@ export default function UserManagementPage() {
                 ))}
               </select>
               <input
-                placeholder="Initial password"
+                placeholder="Mật khẩu ban đầu"
                 type="password"
                 value={addForm.password}
                 onChange={(event) => setAddForm((s) => ({ ...s, password: event.target.value }))}
                 className="focus-ring w-full rounded-md border border-border bg-surface px-3 py-2 text-text"
               />
               <input
-                placeholder="Recovery hint (optional)"
+                placeholder="Gợi ý khôi phục (tùy chọn)"
                 value={addForm.recoveryHint}
                 onChange={(event) => setAddForm((s) => ({ ...s, recoveryHint: event.target.value }))}
                 className="focus-ring w-full rounded-md border border-border bg-surface px-3 py-2 text-text"
               />
               <input
-                placeholder="Recovery answer (optional)"
+                placeholder="Câu trả lời khôi phục (tùy chọn)"
                 type="password"
                 value={addForm.recoveryAnswer}
                 onChange={(event) => setAddForm((s) => ({ ...s, recoveryAnswer: event.target.value }))}
@@ -235,19 +235,19 @@ export default function UserManagementPage() {
                   })
                 }
               >
-                Add user
+                Thêm người dùng
               </button>
             </div>
           </div>
 
           <div className="rounded-lg border border-border bg-bg p-3">
-            <h3 className="mb-2 text-sm text-muted">Edit User</h3>
+            <h3 className="mb-2 text-sm text-muted">Sửa người dùng</h3>
             {!selectedUser ? (
-              <p className="text-sm text-muted">Select user first.</p>
+              <p className="text-sm text-muted">Vui lòng chọn người dùng trước.</p>
             ) : (
               <div className="space-y-2">
                 <input
-                  placeholder="User name"
+                  placeholder="Tên người dùng"
                   value={editForm.userName}
                   onChange={(event) => setEditForm((s) => ({ ...s, userName: event.target.value }))}
                   className="focus-ring w-full rounded-md border border-border bg-surface px-3 py-2 text-text"
@@ -259,14 +259,14 @@ export default function UserManagementPage() {
                   className="focus-ring w-full rounded-md border border-border bg-surface px-3 py-2 text-text"
                 />
                 <input
-                  placeholder="Phone"
+                  placeholder="Số điện thoại"
                   value={editForm.phone}
                   onChange={(event) => setEditForm((s) => ({ ...s, phone: event.target.value }))}
                   className="focus-ring w-full rounded-md border border-border bg-surface px-3 py-2 text-text"
                 />
                 <input
                   type="password"
-                  placeholder="New password (optional)"
+                  placeholder="Mật khẩu mới (tùy chọn)"
                   value={editForm.newPassword}
                   onChange={(event) => setEditForm((s) => ({ ...s, newPassword: event.target.value }))}
                   className="focus-ring w-full rounded-md border border-border bg-surface px-3 py-2 text-text"
@@ -284,18 +284,18 @@ export default function UserManagementPage() {
                   onChange={(event) => setEditForm((s) => ({ ...s, isActive: Number(event.target.value) }))}
                   className="focus-ring w-full rounded-md border border-border bg-surface px-3 py-2 text-text"
                 >
-                  <option value={1}>Active</option>
-                  <option value={0}>Inactive</option>
+                  <option value={1}>Đang hoạt động</option>
+                  <option value={0}>Ngừng hoạt động</option>
                 </select>
                 <input
-                  placeholder="Recovery hint (optional)"
+                  placeholder="Gợi ý khôi phục (tùy chọn)"
                   value={editForm.recoveryHint}
                   onChange={(event) => setEditForm((s) => ({ ...s, recoveryHint: event.target.value }))}
                   className="focus-ring w-full rounded-md border border-border bg-surface px-3 py-2 text-text"
                 />
                 <input
                   type="password"
-                  placeholder="Recovery answer (optional)"
+                  placeholder="Câu trả lời khôi phục (tùy chọn)"
                   value={editForm.recoveryAnswer}
                   onChange={(event) => setEditForm((s) => ({ ...s, recoveryAnswer: event.target.value }))}
                   className="focus-ring w-full rounded-md border border-border bg-surface px-3 py-2 text-text"
@@ -322,34 +322,34 @@ export default function UserManagementPage() {
                     });
                   }}
                 >
-                  Update user
+                  Cập nhật người dùng
                 </button>
               </div>
             )}
           </div>
 
           <div className="rounded-lg border border-border bg-bg p-3">
-            <h3 className="mb-2 text-sm text-muted">Delete User</h3>
-            <p className="mb-2 text-xs text-muted">Admin cannot delete currently signed-in account.</p>
+            <h3 className="mb-2 text-sm text-muted">Xóa người dùng</h3>
+            <p className="mb-2 text-xs text-muted">Quản trị viên không thể tự xóa tài khoản đang đăng nhập.</p>
             <button
               type="button"
               className="focus-ring rounded-md border border-danger/50 px-3 py-2 text-sm text-danger"
               onClick={() => {
                 if (!selectedUser) {
-                  alert("Select a user first.");
+                  alert("Vui lòng chọn người dùng trước.");
                   return;
                 }
                 if (selectedUser.UserID === user?.UserID) {
-                  alert("You cannot delete your current admin account.");
+                  alert("Bạn không thể xóa tài khoản quản trị đang đăng nhập.");
                   return;
                 }
-                if (!window.confirm(`Delete user ${selectedUser.UserName}?`)) {
+                if (!window.confirm(`Bạn có chắc muốn xóa người dùng ${selectedUser.UserName}?`)) {
                   return;
                 }
                 deleteMutation.mutate(selectedUser.UserID);
               }}
             >
-              Delete selected user
+              Xóa người dùng đã chọn
             </button>
           </div>
         </div>

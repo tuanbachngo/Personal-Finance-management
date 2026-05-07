@@ -27,8 +27,8 @@ import { extractApiErrorMessage, login } from "@/lib/api-client";
 import { useAuth } from "@/providers/auth-provider";
 
 const loginSchema = z.object({
-  email: z.string().email("Please enter a valid email address."),
-  password: z.string().min(1, "Password is required.")
+  email: z.string().email("Vui lòng nhập email hợp lệ."),
+  password: z.string().min(1, "Vui lòng nhập mật khẩu.")
 });
 
 type LoginFormValues = z.infer<typeof loginSchema>;
@@ -177,7 +177,7 @@ export default function LoginPage() {
       setSession(result);
       router.replace("/dashboard?welcome=1");
     } catch (error: unknown) {
-      const message = extractApiErrorMessage(error, "Login failed.");
+      const message = extractApiErrorMessage(error, "Đăng nhập thất bại.");
       setFormError(message);
     }
   });
@@ -225,13 +225,13 @@ export default function LoginPage() {
 
         <section className="w-full rounded-lg border border-border bg-surface/95 p-8 shadow-lg backdrop-blur">
           <div className="mb-6">
-            <h2 className="text-3xl font-semibold text-text">Sign In</h2>
+            <h2 className="text-3xl font-semibold text-text">Đăng nhập</h2>
             <p className="mt-2 text-sm text-muted">
-              Access your finance dashboard and continue where you left off.
+              Truy cập bảng điều khiển tài chính và tiếp tục phiên làm việc của bạn.
             </p>
           </div>
 
-          {!ready ? <p className="mb-3 text-sm text-muted">Checking session...</p> : null}
+          {!ready ? <p className="mb-3 text-sm text-muted">Đang kiểm tra phiên đăng nhập...</p> : null}
 
           <form onSubmit={onSubmit} className="space-y-4">
             <label className="block">
@@ -239,7 +239,7 @@ export default function LoginPage() {
               <input
                 type="email"
                 className="focus-ring w-full rounded-md border border-border bg-bg px-3 py-2 text-text"
-                placeholder="you@example.com"
+                placeholder="ban@example.com"
                 {...register("email")}
               />
               {errors.email ? (
@@ -248,11 +248,11 @@ export default function LoginPage() {
             </label>
 
             <label className="block">
-              <span className="mb-1 block text-sm text-muted">Password</span>
+              <span className="mb-1 block text-sm text-muted">Mật khẩu</span>
               <input
                 type="password"
                 className="focus-ring w-full rounded-md border border-border bg-bg px-3 py-2 text-text"
-                placeholder="Enter your password"
+                placeholder="Nhập mật khẩu"
                 {...register("password")}
               />
               {errors.password ? (
@@ -271,7 +271,7 @@ export default function LoginPage() {
               disabled={!ready || mutation.isPending}
               className="focus-ring w-full rounded-md bg-primary px-3 py-2 text-sm font-semibold text-bg disabled:opacity-60"
             >
-              {mutation.isPending ? "Signing in..." : "Sign in"}
+              {mutation.isPending ? "Đang đăng nhập..." : "Đăng nhập"}
             </button>
           </form>
 
@@ -280,19 +280,19 @@ export default function LoginPage() {
               className="focus-ring rounded-md border border-border px-3 py-2 text-center text-sm text-text hover:bg-surface-hover"
               href="/signup"
             >
-              Sign up
+              Đăng ký
             </Link>
             <Link
               className="focus-ring rounded-md border border-border px-3 py-2 text-center text-sm text-text hover:bg-surface-hover"
               href="/forgot-password"
             >
-              Forgot password?
+              Quên mật khẩu?
             </Link>
           </div>
 
           <div className="mt-2">
             <Link className="text-xs text-muted underline" href="/verify-otp-unlock">
-              Account locked? Verify unlock OTP
+              Tài khoản bị khóa? Xác minh OTP mở khóa
             </Link>
           </div>
         </section>

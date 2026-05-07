@@ -102,6 +102,7 @@ class AccountInfo(BaseModel):
 class CategoryInfo(BaseModel):
     CategoryID: int
     CategoryName: str
+    IconEmoji: str = "💸"
 
 
 class TransactionRecord(BaseModel):
@@ -115,6 +116,10 @@ class TransactionRecord(BaseModel):
     Amount: float
     TransactionDate: datetime
     Description: str | None = None
+    GoalID: int | None = None
+    GoalName: str | None = None
+    GoalType: str | None = None
+    GoalContributionType: str | None = None
 
 
 class IncomeRecord(BaseModel):
@@ -142,6 +147,7 @@ class IncomeCreateRequest(BaseModel):
     amount: float = Field(gt=0)
     transaction_date: date | None = None
     description: str = ""
+    goal_id: int | None = None
 
 
 class IncomeUpdateRequest(BaseModel):
@@ -150,6 +156,7 @@ class IncomeUpdateRequest(BaseModel):
     amount: float = Field(gt=0)
     transaction_date: date | None = None
     description: str = ""
+    goal_id: int | None = None
 
 
 class ExpenseCreateRequest(BaseModel):
@@ -159,6 +166,7 @@ class ExpenseCreateRequest(BaseModel):
     amount: float = Field(gt=0)
     transaction_date: date | None = None
     description: str = ""
+    goal_id: int | None = None
 
 
 class ExpenseUpdateRequest(BaseModel):
@@ -168,6 +176,7 @@ class ExpenseUpdateRequest(BaseModel):
     amount: float = Field(gt=0)
     transaction_date: date | None = None
     description: str = ""
+    goal_id: int | None = None
 
 
 class ImportPreviewRow(BaseModel):
@@ -322,6 +331,26 @@ class BudgetUpdateRequest(BaseModel):
 class FixedExpenseItem(BaseModel):
     item_name: str = Field(min_length=1, max_length=100)
     amount: float = Field(ge=0)
+    category_id: int | None = None
+    category_name: str | None = None
+    category_icon: str | None = None
+
+
+class FixedExpenseCardRecord(BaseModel):
+    card_id: str
+    item_name: str
+    category_id: int | None = None
+    category_name: str = "Chi phí cố định"
+    category_icon: str = "💸"
+    planned_amount: float
+    spent_amount: float = 0.0
+    remaining_amount: float = 0.0
+    usage_percent: float = 0.0
+    alert_level: str = "NORMAL"
+    spending_pace_status: str = "ON_TRACK"
+    safe_daily_spend: float = 0.0
+    safe_weekly_spend: float = 0.0
+    days_left_in_month: int = 0
 
 
 class BudgetSettingsRequest(BaseModel):
@@ -339,6 +368,7 @@ class BudgetCategoryGuardrailRecord(BaseModel):
     budget_id: int
     category_id: int
     category_name: str
+    category_icon: str = "💸"
     planned_amount: float
     spent_amount: float
     remaining_budget: float
@@ -371,6 +401,7 @@ class BudgetOverviewResponse(BaseModel):
     remaining_budget: float
     budget_health: str
     warnings: List[str] = Field(default_factory=list)
+    fixed_expense_cards: List[FixedExpenseCardRecord] = Field(default_factory=list)
     categories: List[BudgetCategoryGuardrailRecord] = Field(default_factory=list)
     created_at: datetime | None = None
     updated_at: datetime | None = None
@@ -442,6 +473,16 @@ class DashboardOverviewResponse(BaseModel):
     summary: FinancialSummary
     monthly_trend: List[MonthlyTrendPoint]
     alerts: List[SpendingAlert]
+
+
+class DashboardReminder(BaseModel):
+    id: str
+    type: str
+    title: str
+    message: str
+    action_label: str
+    action_href: str
+    severity: str
 
 
 class UserProfileRecord(BaseModel):

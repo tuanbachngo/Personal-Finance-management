@@ -1,4 +1,4 @@
-export function LoadingSkeleton({ label = "Loading data..." }: { label?: string }) {
+export function LoadingSkeleton({ label = "Đang tải dữ liệu..." }: { label?: string }) {
   return (
     <div className="rounded-lg border border-border bg-bg p-4" role="status" aria-live="polite">
       <div className="h-4 w-40 animate-pulse rounded bg-surface-hover" />

@@ -23,8 +23,8 @@ import type { TransactionRecord } from "@/types/api";
 type TransactionTab = "INCOME" | "EXPENSE";
 
 const tabs: { label: string; value: TransactionTab }[] = [
-  { label: "Income", value: "INCOME" },
-  { label: "Expense", value: "EXPENSE" }
+  { label: "Thu nhập", value: "INCOME" },
+  { label: "Chi tiêu", value: "EXPENSE" }
 ];
 
 function getTransactionKey(row: TransactionRecord): string {
@@ -66,7 +66,7 @@ export default function TransactionsPage() {
     const map = new Map<number, string>();
 
     (accountsQuery.data || []).forEach((row) => {
-      map.set(row.AccountID, row.BankName || `Account #${row.AccountID}`);
+      map.set(row.AccountID, row.BankName || `Tài khoản #${row.AccountID}`);
     });
 
     return map;
@@ -76,7 +76,7 @@ export default function TransactionsPage() {
     const map = new Map<number, string>();
 
     (categoriesQuery.data || []).forEach((row) => {
-      map.set(row.CategoryID, row.CategoryName || `Category #${row.CategoryID}`);
+      map.set(row.CategoryID, row.CategoryName || `Danh mục #${row.CategoryID}`);
     });
 
     return map;
@@ -148,13 +148,13 @@ export default function TransactionsPage() {
 
   const currentEditTransaction = editQueue.length > 0 ? editQueue[0] : null;
   const emptyMessage =
-    activeTab === "INCOME" ? "No income records found." : "No expense records found.";
+    activeTab === "INCOME" ? "Không có bản ghi thu nhập." : "Không có bản ghi chi tiêu.";
 
   return (
     <AuthGuard>
       <AppShell
-        title="Transactions"
-        subtitle={`Browse and manage transactions for ${user?.UserName || "selected user"}`}
+        title="Giao dịch"
+        subtitle={`Quản lý giao dịch của ${user?.UserName || "người dùng đã chọn"}`}
       >
         <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex w-full flex-col gap-3 md:flex-row md:items-center">
@@ -189,7 +189,7 @@ export default function TransactionsPage() {
                   setSelectedIds([]);
                 }}
               >
-                <option value="">All accounts</option>
+                <option value="">Tất cả tài khoản</option>
                 {(accountsQuery.data || []).map((row) => (
                   <option key={row.AccountID} value={row.AccountID}>
                     {row.BankName}
@@ -209,7 +209,7 @@ export default function TransactionsPage() {
                 }}
                 className="focus-ring rounded-xl border border-border bg-surface px-4 py-2 text-sm font-semibold text-text transition-colors hover:bg-surface-hover"
               >
-                Cancel Edit
+                Hủy chỉnh sửa
               </button>
             ) : (
               <>
@@ -218,21 +218,21 @@ export default function TransactionsPage() {
                   onClick={() => setIsImportModalOpen(true)}
                   className="focus-ring rounded-xl border border-border bg-surface px-4 py-2 text-sm font-semibold text-text transition-colors hover:bg-surface-hover"
                 >
-                  Import Transactions
+                  Nhập giao dịch từ file
                 </button>
                 <button
                   type="button"
                   onClick={() => setIsEditMode(true)}
                   className="focus-ring rounded-xl border border-border bg-surface px-4 py-2 text-sm font-semibold text-text transition-colors hover:bg-surface-hover"
                 >
-                  Select & Edit
+                  Chọn để chỉnh sửa
                 </button>
                 <button
                   type="button"
                   onClick={() => setIsAddModalOpen(true)}
                   className="focus-ring rounded-xl bg-primary px-4 py-2 text-sm font-bold text-bg transition-colors hover:bg-primary/90"
                 >
-                  + Add Transaction
+                  + Thêm giao dịch
                 </button>
               </>
             )}
@@ -240,12 +240,12 @@ export default function TransactionsPage() {
         </div>
 
         {transactionsQuery.isLoading ? (
-          <LoadingSkeleton label="Loading transactions..." />
+          <LoadingSkeleton label="Đang tải giao dịch..." />
         ) : null}
 
         {transactionsQuery.isError ? (
           <ErrorState
-            title="Failed to load transactions"
+            title="Không thể tải giao dịch"
             detail={extractApiErrorMessage(transactionsQuery.error)}
             onRetry={() => transactionsQuery.refetch()}
           />
@@ -265,21 +265,21 @@ export default function TransactionsPage() {
                           <th className="w-10 border-b border-border px-3 py-3 text-left font-medium text-muted" />
                         ) : null}
                         <th className="border-b border-border px-3 py-3 text-left font-medium text-muted">
-                          Date
+                          Ngày
                         </th>
                         <th className="border-b border-border px-3 py-3 text-left font-medium text-muted">
-                          Account
+                          Tài khoản
                         </th>
                         {activeTab === "EXPENSE" ? (
                           <th className="border-b border-border px-3 py-3 text-left font-medium text-muted">
-                            Category
+                            Danh mục
                           </th>
                         ) : null}
                         <th className="border-b border-border px-3 py-3 text-right font-medium text-muted">
-                          Amount
+                          Số tiền
                         </th>
                         <th className="border-b border-border px-3 py-3 text-left font-medium text-muted">
-                          Description
+                          Mô tả
                         </th>
                       </tr>
                     </thead>
@@ -288,11 +288,11 @@ export default function TransactionsPage() {
                       {visibleTransactions.map((row) => {
                         const rowId = getTransactionKey(row);
                         const selected = selectedIds.includes(rowId);
-                        const accountName = accountById.get(row.AccountID) || "Unknown account";
+                        const accountName = accountById.get(row.AccountID) || "Không rõ tài khoản";
                         const categoryName =
                           row.CategoryID === null
                             ? "-"
-                            : categoryById.get(row.CategoryID) || "Uncategorized";
+                            : categoryById.get(row.CategoryID) || "Chưa phân loại";
 
                         return (
                           <tr
@@ -352,8 +352,7 @@ export default function TransactionsPage() {
             {isEditMode ? (
               <div className="fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 items-center gap-4 rounded-full border border-border bg-surface px-6 py-3 shadow-lg">
                 <span className="text-sm font-semibold text-text">
-                  {selectedIds.length} transaction{selectedIds.length !== 1 ? "s" : ""}{" "}
-                  selected
+                  Đã chọn {selectedIds.length} giao dịch
                 </span>
                 <button
                   type="button"
@@ -361,7 +360,7 @@ export default function TransactionsPage() {
                   disabled={selectedIds.length === 0}
                   className="rounded-full bg-primary px-6 py-2 text-sm font-bold text-bg transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Edit Selected
+                  Sửa mục đã chọn
                 </button>
               </div>
             ) : null}

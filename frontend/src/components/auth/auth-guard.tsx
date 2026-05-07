@@ -28,13 +28,13 @@ export function AuthGuard({ children, requireAdmin = false }: AuthGuardProps) {
   }, [ready, isAuthenticated, isAdmin, requireAdmin, router]);
 
   if (!ready) {
-    return <p className="text-sm text-muted">Loading session...</p>;
+    return <p className="text-sm text-muted">Đang tải phiên đăng nhập...</p>;
   }
   if (!isAuthenticated) {
-    return <p className="text-sm text-muted">Redirecting to login...</p>;
+    return <p className="text-sm text-muted">Đang chuyển đến trang đăng nhập...</p>;
   }
   if (requireAdmin && !isAdmin) {
-    return <p className="text-sm text-muted">Redirecting...</p>;
+    return <p className="text-sm text-muted">Đang chuyển trang...</p>;
   }
 
   return <>{children}</>;

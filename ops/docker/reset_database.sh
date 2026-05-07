@@ -29,7 +29,13 @@ echo "Resetting database Personal_Finance on ${DB_HOST}:${DB_PORT}..."
 
 for file in $SQL_FILES; do
   echo "Running ${file}..."
-  mysql --protocol=tcp -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" < "${SQL_DIR}/${file}"
+  mysql \
+    --protocol=tcp \
+    --default-character-set=utf8mb4 \
+    -h "$DB_HOST" \
+    -P "$DB_PORT" \
+    -u "$DB_USER" \
+    < "${SQL_DIR}/${file}"
 done
 
 echo "Database reset completed successfully."

@@ -25,7 +25,7 @@ function formatNumber(value: number): string {
 export function ChartPanel({ data }: ChartPanelProps) {
   return (
     <div className="h-[400px] w-full rounded-xl border border-border bg-surface p-5 shadow-sm">
-      <h2 className="text-lg font-semibold text-text tracking-tight mb-6">Cash Flow Trend</h2>
+      <h2 className="mb-6 text-lg font-semibold tracking-tight text-text">Xu hướng dòng tiền</h2>
       <div className="h-[300px] w-full">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
@@ -64,8 +64,8 @@ export function ChartPanel({ data }: ChartPanelProps) {
               }}
               formatter={(value: number) => formatNumber(value)}
             />
-            <Area type="monotone" dataKey="MonthlyIncome" stroke="#10B981" fillOpacity={1} fill="url(#colorIncome)" strokeWidth={2} name="Income" />
-            <Area type="monotone" dataKey="MonthlyExpense" stroke="#EF4444" fillOpacity={1} fill="url(#colorExpense)" strokeWidth={2} name="Expense" />
+            <Area type="monotone" dataKey="MonthlyIncome" stroke="#10B981" fillOpacity={1} fill="url(#colorIncome)" strokeWidth={2} name="Thu nhập" />
+            <Area type="monotone" dataKey="MonthlyExpense" stroke="#EF4444" fillOpacity={1} fill="url(#colorExpense)" strokeWidth={2} name="Chi tiêu" />
           </AreaChart>
         </ResponsiveContainer>
       </div>

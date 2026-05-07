@@ -69,10 +69,11 @@ def create_income(
             amount=payload.amount,
             transaction_date=payload.transaction_date,
             description=payload.description,
+            goal_id=payload.goal_id,
         )
     except ValueError as err:
         raise map_value_error_to_http(err, default_status=400) from err
-    return ApiMessageResponse(message="Income added successfully.")
+    return ApiMessageResponse(message="Đã thêm khoản thu nhập thành công.")
 
 
 @router.put("/incomes/{income_id}", response_model=ApiMessageResponse)
@@ -89,10 +90,11 @@ def update_income(
             amount=payload.amount,
             transaction_date=payload.transaction_date,
             description=payload.description,
+            goal_id=payload.goal_id,
         )
     except ValueError as err:
         raise map_value_error_to_http(err, default_status=400) from err
-    return ApiMessageResponse(message="Income updated successfully.")
+    return ApiMessageResponse(message="Đã cập nhật khoản thu nhập thành công.")
 
 
 @router.delete("/incomes/{income_id}", response_model=ApiMessageResponse)
@@ -101,7 +103,7 @@ def delete_income(income_id: int, ctx: AuthContext = Depends(get_authenticated_c
         ctx.service.remove_income(income_id)
     except ValueError as err:
         raise map_value_error_to_http(err, default_status=400) from err
-    return ApiMessageResponse(message="Income deleted successfully.")
+    return ApiMessageResponse(message="Đã xóa khoản thu nhập thành công.")
 
 
 @router.get("/expenses", response_model=list[ExpenseRecord])
@@ -141,10 +143,11 @@ def create_expense(
             amount=payload.amount,
             transaction_date=payload.transaction_date,
             description=payload.description,
+            goal_id=payload.goal_id,
         )
     except ValueError as err:
         raise map_value_error_to_http(err, default_status=400) from err
-    return ApiMessageResponse(message="Expense added successfully.")
+    return ApiMessageResponse(message="Đã thêm khoản chi tiêu thành công.")
 
 
 @router.put("/expenses/{expense_id}", response_model=ApiMessageResponse)
@@ -162,10 +165,11 @@ def update_expense(
             amount=payload.amount,
             transaction_date=payload.transaction_date,
             description=payload.description,
+            goal_id=payload.goal_id,
         )
     except ValueError as err:
         raise map_value_error_to_http(err, default_status=400) from err
-    return ApiMessageResponse(message="Expense updated successfully.")
+    return ApiMessageResponse(message="Đã cập nhật khoản chi tiêu thành công.")
 
 
 @router.delete("/expenses/{expense_id}", response_model=ApiMessageResponse)
@@ -174,4 +178,4 @@ def delete_expense(expense_id: int, ctx: AuthContext = Depends(get_authenticated
         ctx.service.remove_expense(expense_id)
     except ValueError as err:
         raise map_value_error_to_http(err, default_status=400) from err
-    return ApiMessageResponse(message="Expense deleted successfully.")
+    return ApiMessageResponse(message="Đã xóa khoản chi tiêu thành công.")

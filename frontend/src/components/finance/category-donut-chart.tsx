@@ -22,16 +22,16 @@ export function CategoryDonutChart({ data }: Props) {
 
   return (
     <div className="h-[400px] w-full rounded-xl border border-border bg-surface p-5 shadow-sm">
-      <h2 className="mb-6 text-lg font-semibold tracking-tight text-text">Spending by Category</h2>
+      <h2 className="mb-6 text-lg font-semibold tracking-tight text-text">Chi tiêu theo danh mục</h2>
       <div className="relative h-[300px] w-full">
         {data.length === 0 ? (
           <div className="flex h-full items-center justify-center">
-            <p className="text-sm text-muted">No spending data</p>
+            <p className="text-sm text-muted">Không có dữ liệu chi tiêu</p>
           </div>
         ) : (
           <>
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none mt-2">
-              <span className="text-xs uppercase tracking-wider text-muted">Total Spent</span>
+              <span className="text-xs uppercase tracking-wider text-muted">Tổng chi</span>
               <span className="text-2xl font-bold font-mono tracking-tight text-text mt-1">
                 {formatNumber(totalSpent)}
               </span>

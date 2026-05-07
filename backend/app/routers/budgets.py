@@ -71,7 +71,7 @@ def create_budget_plan(
         )
     except ValueError as err:
         raise map_value_error_to_http(err, default_status=400) from err
-    return ApiMessageResponse(message="Budget plan added successfully.")
+    return ApiMessageResponse(message="Đã thêm kế hoạch ngân sách thành công.")
 
 
 @router.put("/plans/{budget_id}", response_model=ApiMessageResponse)
@@ -95,7 +95,7 @@ def update_budget_plan(
         )
     except ValueError as err:
         raise map_value_error_to_http(err, default_status=400) from err
-    return ApiMessageResponse(message="Budget plan updated successfully.")
+    return ApiMessageResponse(message="Đã cập nhật kế hoạch ngân sách thành công.")
 
 
 @router.delete("/plans/{budget_id}", response_model=ApiMessageResponse)
@@ -108,7 +108,7 @@ def delete_budget_plan(
         ctx.service.remove_budget_plan(budget_id=budget_id, user_id=user_id)
     except ValueError as err:
         raise map_value_error_to_http(err, default_status=400) from err
-    return ApiMessageResponse(message="Budget plan deleted successfully.")
+    return ApiMessageResponse(message="Đã xóa kế hoạch ngân sách thành công.")
 
 
 @router.get("/status", response_model=list[BudgetStatusRecord])

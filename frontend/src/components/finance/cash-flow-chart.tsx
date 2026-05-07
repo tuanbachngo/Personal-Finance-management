@@ -28,7 +28,7 @@ export function CashFlowChart({ data, headerActions }: Props) {
   return (
     <div className="h-[400px] w-full rounded-xl border border-border bg-surface p-5 shadow-sm">
       <div className="mb-6 flex items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold tracking-tight text-text">Cash Flow</h2>
+        <h2 className="text-lg font-semibold tracking-tight text-text">Dòng tiền</h2>
         {headerActions ? <div className="flex items-center gap-2">{headerActions}</div> : null}
       </div>
       <div className="h-[300px] w-full">
@@ -60,8 +60,8 @@ export function CashFlowChart({ data, headerActions }: Props) {
               }}
               formatter={(value: number) => formatNumber(value)}
             />
-            <Bar dataKey="MonthlyIncome" fill="#10B981" name="Income" radius={[4, 4, 0, 0]} />
-            <Bar dataKey="MonthlyExpense" fill="#EF4444" name="Expense" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="MonthlyIncome" fill="#10B981" name="Thu nhập" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="MonthlyExpense" fill="#EF4444" name="Chi tiêu" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>

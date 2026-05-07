@@ -3,6 +3,7 @@
 -- Data range: January 2025 -> April 2026 (more than 12 months).
 
 USE Personal_Finance;
+SET NAMES utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 -- 1. USERS (10 users)
 INSERT INTO Users (UserID, UserName, Email, PhoneNumber) VALUES
@@ -22,15 +23,17 @@ INSERT INTO Users (UserID, UserName, Email, PhoneNumber) VALUES
 -- Use `ops/bootstrap_auth.py` with local environment variables after reset.
 
 -- 2. EXPENSE CATEGORIES
-INSERT INTO ExpenseCategories (CategoryID, CategoryName) VALUES
-(1, 'Food'),
-(2, 'Transportation'),
-(3, 'Education'),
-(4, 'Entertainment'),
-(5, 'Shopping'),
-(6, 'Healthcare'),
-(7, 'Utilities'),
-(8, 'Rent');
+INSERT INTO ExpenseCategories (CategoryID, CategoryName, IconEmoji) VALUES
+(1, 'Ăn uống', '🍽️'),
+(2, 'Di chuyển', '🚗'),
+(3, 'Giáo dục', '🎓'),
+(4, 'Giải trí', '🎬'),
+(5, 'Mua sắm', '🛍️'),
+(6, 'Sức khỏe', '🏥'),
+(7, 'Hóa đơn', '💡'),
+(8, 'Thuê nhà', '🏠'),
+(9, 'Tích lũy', '💰'),
+(10, 'Trả nợ', '💳');
 
 -- 3. BANK CATALOG
 INSERT INTO Banks (BankID, BankCode, BankName, IsActive) VALUES
@@ -85,16 +88,16 @@ WITH RECURSIVE months AS (
     WHERE MonthStart < DATE('2026-04-01')
 ),
 income_profiles AS (
-    SELECT 1 AS UserID, 1 AS AccountID, 20000000.00 AS BaseIncome, 'Monthly salary' AS IncomeSource
-    UNION ALL SELECT 2, 3, 16000000.00, 'Monthly salary'
-    UNION ALL SELECT 3, 4, 13000000.00, 'Monthly salary'
-    UNION ALL SELECT 4, 5, 23000000.00, 'Monthly salary'
-    UNION ALL SELECT 5, 6, 17500000.00, 'Monthly salary'
-    UNION ALL SELECT 6, 8, 9000000.00, 'Main salary (variable)'
-    UNION ALL SELECT 7, 9, 14500000.00, 'Monthly salary'
-    UNION ALL SELECT 8, 10, 12500000.00, 'Monthly salary'
-    UNION ALL SELECT 9, 11, 11000000.00, 'Monthly salary'
-    UNION ALL SELECT 10, 12, 15000000.00, 'Monthly salary'
+    SELECT 1 AS UserID, 1 AS AccountID, 20000000.00 AS BaseIncome, 'Lương hàng tháng' AS IncomeSource
+    UNION ALL SELECT 2, 3, 16000000.00, 'Lương hàng tháng'
+    UNION ALL SELECT 3, 4, 13000000.00, 'Lương hàng tháng'
+    UNION ALL SELECT 4, 5, 23000000.00, 'Lương hàng tháng'
+    UNION ALL SELECT 5, 6, 17500000.00, 'Lương hàng tháng'
+    UNION ALL SELECT 6, 8, 9000000.00, 'Lương chính (biến động)'
+    UNION ALL SELECT 7, 9, 14500000.00, 'Lương hàng tháng'
+    UNION ALL SELECT 8, 10, 12500000.00, 'Lương hàng tháng'
+    UNION ALL SELECT 9, 11, 11000000.00, 'Lương hàng tháng'
+    UNION ALL SELECT 10, 12, 15000000.00, 'Lương hàng tháng'
 )
 SELECT
     p.UserID,
@@ -133,7 +136,7 @@ SELECT
     2,
     3500000.00,
     TIMESTAMP(DATE_ADD(MonthStart, INTERVAL 14 DAY), '19:30:00'),
-    CONCAT('Freelance design income - ', DATE_FORMAT(MonthStart, '%Y-%m'))
+    CONCAT('Thu nhập thiết kế tự do - ', DATE_FORMAT(MonthStart, '%Y-%m'))
 FROM months
 WHERE MOD(MonthNo, 2) = 0;
 
@@ -151,7 +154,7 @@ SELECT
     4,
     1800000.00,
     TIMESTAMP(DATE_ADD(MonthStart, INTERVAL 21 DAY), '20:10:00'),
-    CONCAT('Tutoring income - ', DATE_FORMAT(MonthStart, '%Y-%m'))
+    CONCAT('Thu nhập dạy kèm - ', DATE_FORMAT(MonthStart, '%Y-%m'))
 FROM months
 WHERE MOD(MonthNo, 2) = 1;
 
@@ -169,7 +172,7 @@ SELECT
     7,
     2200000.00 + CASE WHEN MOD(MonthNo, 3) = 0 THEN 900000.00 ELSE 0.00 END,
     TIMESTAMP(DATE_ADD(MonthStart, INTERVAL 14 DAY), '21:20:00'),
-    CONCAT('Online business income - ', DATE_FORMAT(MonthStart, '%Y-%m'))
+    CONCAT('Thu nhập kinh doanh online - ', DATE_FORMAT(MonthStart, '%Y-%m'))
 FROM months;
 
 -- 4.5 User 8: quarterly scholarship/side income
@@ -186,7 +189,7 @@ SELECT
     10,
     1200000.00,
     TIMESTAMP(DATE_ADD(MonthStart, INTERVAL 24 DAY), '20:00:00'),
-    CONCAT('Quarterly scholarship - ', DATE_FORMAT(MonthStart, '%Y-%m'))
+    CONCAT('Học bổng theo quý - ', DATE_FORMAT(MonthStart, '%Y-%m'))
 FROM months
 WHERE MOD(MonthNo, 3) = 0;
 
@@ -204,7 +207,7 @@ SELECT
     11,
     1000000.00,
     TIMESTAMP(DATE_ADD(MonthStart, INTERVAL 17 DAY), '19:40:00'),
-    CONCAT('Overtime income - ', DATE_FORMAT(MonthStart, '%Y-%m'))
+    CONCAT('Thu nhập làm thêm giờ - ', DATE_FORMAT(MonthStart, '%Y-%m'))
 FROM months
 WHERE MOD(MonthNo, 2) = 0;
 
@@ -236,7 +239,7 @@ SELECT
     8,
     p.RentAmt,
     TIMESTAMP(DATE_ADD(m.MonthStart, INTERVAL 2 DAY), '09:00:00'),
-    CONCAT('Monthly rent - ', DATE_FORMAT(m.MonthStart, '%Y-%m'))
+    CONCAT('Tiền thuê nhà hàng tháng - ', DATE_FORMAT(m.MonthStart, '%Y-%m'))
 FROM months m
 JOIN expense_profiles p ON 1 = 1;
 
@@ -266,7 +269,7 @@ SELECT
     1,
     p.FoodAmt,
     TIMESTAMP(DATE_ADD(m.MonthStart, INTERVAL 9 DAY), '19:00:00'),
-    CONCAT('Food and groceries - ', DATE_FORMAT(m.MonthStart, '%Y-%m'))
+    CONCAT('Ăn uống và tạp hóa - ', DATE_FORMAT(m.MonthStart, '%Y-%m'))
 FROM months m
 JOIN expense_profiles p ON 1 = 1;
 
@@ -296,7 +299,7 @@ SELECT
     2,
     p.TransportAmt,
     TIMESTAMP(DATE_ADD(m.MonthStart, INTERVAL 17 DAY), '08:30:00'),
-    CONCAT('Transportation cost - ', DATE_FORMAT(m.MonthStart, '%Y-%m'))
+    CONCAT('Chi phí di chuyển - ', DATE_FORMAT(m.MonthStart, '%Y-%m'))
 FROM months m
 JOIN expense_profiles p ON 1 = 1;
 
@@ -315,7 +318,7 @@ SELECT
     4,
     1000000.00,
     TIMESTAMP(DATE_ADD(MonthStart, INTERVAL 21 DAY), '21:05:00'),
-    CONCAT('Entertainment spending - ', DATE_FORMAT(MonthStart, '%Y-%m'))
+    CONCAT('Chi tiêu giải trí - ', DATE_FORMAT(MonthStart, '%Y-%m'))
 FROM months
 WHERE MOD(MonthNo, 2) = 0;
 
@@ -333,7 +336,7 @@ SELECT
     7,
     1200000.00,
     TIMESTAMP(DATE_ADD(MonthStart, INTERVAL 23 DAY), '20:00:00'),
-    CONCAT('Utilities bill - ', DATE_FORMAT(MonthStart, '%Y-%m'))
+    CONCAT('Hóa đơn tiện ích - ', DATE_FORMAT(MonthStart, '%Y-%m'))
 FROM months;
 
 INSERT INTO Expenses (UserID, AccountID, CategoryID, Amount, ExpenseDate, Description)
@@ -350,7 +353,7 @@ SELECT
     6,
     CASE WHEN MOD(MonthNo, 4) = 3 THEN 1800000.00 ELSE 600000.00 END,
     TIMESTAMP(DATE_ADD(MonthStart, INTERVAL 13 DAY), '10:00:00'),
-    CONCAT('Healthcare spending - ', DATE_FORMAT(MonthStart, '%Y-%m'))
+    CONCAT('Chi tiêu sức khỏe - ', DATE_FORMAT(MonthStart, '%Y-%m'))
 FROM months;
 
 INSERT INTO Expenses (UserID, AccountID, CategoryID, Amount, ExpenseDate, Description)
@@ -367,7 +370,7 @@ SELECT
     5,
     1500000.00,
     TIMESTAMP(DATE_ADD(MonthStart, INTERVAL 19 DAY), '21:10:00'),
-    CONCAT('Shopping spending - ', DATE_FORMAT(MonthStart, '%Y-%m'))
+    CONCAT('Chi tiêu mua sắm - ', DATE_FORMAT(MonthStart, '%Y-%m'))
 FROM months;
 
 INSERT INTO Expenses (UserID, AccountID, CategoryID, Amount, ExpenseDate, Description)
@@ -384,7 +387,7 @@ SELECT
     5,
     1400000.00,
     TIMESTAMP(DATE_ADD(MonthStart, INTERVAL 20 DAY), '20:30:00'),
-    CONCAT('Personal shopping - ', DATE_FORMAT(MonthStart, '%Y-%m'))
+    CONCAT('Mua sắm cá nhân - ', DATE_FORMAT(MonthStart, '%Y-%m'))
 FROM months;
 
 INSERT INTO Expenses (UserID, AccountID, CategoryID, Amount, ExpenseDate, Description)
@@ -401,7 +404,7 @@ SELECT
     6,
     CASE WHEN MOD(MonthNo, 3) = 0 THEN 1700000.00 ELSE 500000.00 END,
     TIMESTAMP(DATE_ADD(MonthStart, INTERVAL 24 DAY), '09:30:00'),
-    CONCAT('Healthcare cost (variable) - ', DATE_FORMAT(MonthStart, '%Y-%m'))
+    CONCAT('Chi phí sức khỏe (biến động) - ', DATE_FORMAT(MonthStart, '%Y-%m'))
 FROM months;
 
 INSERT INTO Expenses (UserID, AccountID, CategoryID, Amount, ExpenseDate, Description)
@@ -418,7 +421,7 @@ SELECT
     4,
     900000.00,
     TIMESTAMP(DATE_ADD(MonthStart, INTERVAL 22 DAY), '21:15:00'),
-    CONCAT('Entertainment spending - ', DATE_FORMAT(MonthStart, '%Y-%m'))
+    CONCAT('Chi tiêu giải trí - ', DATE_FORMAT(MonthStart, '%Y-%m'))
 FROM months;
 
 INSERT INTO Expenses (UserID, AccountID, CategoryID, Amount, ExpenseDate, Description)
@@ -435,7 +438,7 @@ SELECT
     3,
     2200000.00,
     TIMESTAMP(DATE_ADD(MonthStart, INTERVAL 18 DAY), '18:45:00'),
-    CONCAT('Education spending - ', DATE_FORMAT(MonthStart, '%Y-%m'))
+    CONCAT('Chi tiêu giáo dục - ', DATE_FORMAT(MonthStart, '%Y-%m'))
 FROM months;
 
 INSERT INTO Expenses (UserID, AccountID, CategoryID, Amount, ExpenseDate, Description)
@@ -452,7 +455,7 @@ SELECT
     6,
     CASE WHEN MOD(MonthNo, 2) = 1 THEN 2500000.00 ELSE 900000.00 END,
     TIMESTAMP(DATE_ADD(MonthStart, INTERVAL 13 DAY), '09:45:00'),
-    CONCAT('Healthcare spending - ', DATE_FORMAT(MonthStart, '%Y-%m'))
+    CONCAT('Chi tiêu sức khỏe - ', DATE_FORMAT(MonthStart, '%Y-%m'))
 FROM months;
 
 INSERT INTO Expenses (UserID, AccountID, CategoryID, Amount, ExpenseDate, Description)
@@ -469,7 +472,7 @@ SELECT
     5,
     2800000.00,
     TIMESTAMP(DATE_ADD(MonthStart, INTERVAL 19 DAY), '20:45:00'),
-    CONCAT('Shopping spending - ', DATE_FORMAT(MonthStart, '%Y-%m'))
+    CONCAT('Chi tiêu mua sắm - ', DATE_FORMAT(MonthStart, '%Y-%m'))
 FROM months;
 
 -- 6. BUDGET PLANS (March 2026 + April 2026)
@@ -537,18 +540,18 @@ INSERT INTO SavingGoalCategories (
     SortOrder
 )
 VALUES
-    ('EMERGENCY_FUND', 'Emergency Fund', '🛟', 'Safety fund for unexpected expenses.', 0, 1),
-    ('VACATION', 'Vacation / Travel', '🏝️', 'Saving for trips, vacation, or travel plans.', 0, 2),
-    ('LAPTOP', 'Laptop / Computer', '💻', 'Saving for laptop, computer, or work equipment.', 0, 3),
-    ('HOME_DOWN_PAYMENT', 'Home Down Payment', '🏠', 'Saving for house or apartment down payment.', 0, 4),
-    ('CAR', 'Car / Vehicle', '🚗', 'Saving for car, motorbike, or other vehicle.', 0, 5),
-    ('EDUCATION', 'Education', '🎓', 'Saving for tuition, courses, or learning expenses.', 0, 6),
-    ('WEDDING', 'Wedding', '💍', 'Saving for wedding or marriage plans.', 0, 7),
-    ('HEALTH', 'Health / Medical', '🏥', 'Saving for healthcare or medical expenses.', 0, 8),
-    ('BUSINESS', 'Business', '💼', 'Saving for business or startup plans.', 0, 9),
-    ('INVESTMENT', 'Investment', '📈', 'Saving for investment goals.', 0, 10),
-    ('GIFT', 'Gift', '🎁', 'Saving for gifts or special occasions.', 0, 11),
-    ('OTHER', 'Other / Custom', '💰', 'Custom saving goal category.', 1, 99);
+    ('EMERGENCY_FUND', 'Quỹ khẩn cấp', '🛟', 'Quỹ an toàn cho các chi phí phát sinh.', 0, 1),
+    ('VACATION', 'Du lịch / Nghỉ dưỡng', '🏝️', 'Tiết kiệm cho các chuyến du lịch và nghỉ dưỡng.', 0, 2),
+    ('LAPTOP', 'Laptop / Máy tính', '💻', 'Tiết kiệm để mua laptop, máy tính hoặc thiết bị làm việc.', 0, 3),
+    ('HOME_DOWN_PAYMENT', 'Trả trước mua nhà', '🏠', 'Tiết kiệm tiền trả trước khi mua nhà hoặc căn hộ.', 0, 4),
+    ('CAR', 'Ô tô / Phương tiện', '🚗', 'Tiết kiệm để mua ô tô, xe máy hoặc phương tiện khác.', 0, 5),
+    ('EDUCATION', 'Giáo dục', '🎓', 'Tiết kiệm cho học phí, khóa học hoặc chi phí học tập.', 0, 6),
+    ('WEDDING', 'Đám cưới', '💍', 'Tiết kiệm cho kế hoạch cưới hỏi.', 0, 7),
+    ('HEALTH', 'Sức khỏe / Y tế', '🏥', 'Tiết kiệm cho chăm sóc sức khỏe và chi phí y tế.', 0, 8),
+    ('BUSINESS', 'Kinh doanh', '💼', 'Tiết kiệm cho kế hoạch kinh doanh hoặc khởi nghiệp.', 0, 9),
+    ('INVESTMENT', 'Đầu tư', '📈', 'Tiết kiệm dành cho mục tiêu đầu tư.', 0, 10),
+    ('GIFT', 'Quà tặng', '🎁', 'Tiết kiệm cho quà tặng và dịp đặc biệt.', 0, 11),
+    ('OTHER', 'Khác / Tùy chỉnh', '💰', 'Danh mục mục tiêu tiết kiệm tùy chỉnh.', 1, 99);
 
 -- 9. SAVING GOALS
 INSERT INTO SavingGoals (
@@ -569,7 +572,7 @@ INSERT INTO SavingGoals (
 SELECT
     u.UserID,
     MIN(ba.AccountID),
-    'Emergency Fund',
+    'Quỹ khẩn cấp',
     'SAVE_UP',
     c.GoalCategoryID,
     NULL,
@@ -579,7 +582,7 @@ SELECT
     DATE_ADD(CURDATE(), INTERVAL 10 MONTH),
     0.00,
     'ACTIVE',
-    'Build a safety fund for unexpected expenses.'
+    'Xây dựng quỹ an toàn cho chi phí phát sinh.'
 FROM Users u
 JOIN BankAccounts ba ON u.UserID = ba.UserID
 JOIN SavingGoalCategories c ON c.CategoryKey = 'EMERGENCY_FUND'
@@ -603,7 +606,7 @@ INSERT INTO SavingGoals (
 SELECT
     u.UserID,
     MIN(ba.AccountID),
-    'Buy a Laptop',
+    'Mua laptop',
     'SAVE_UP',
     c.GoalCategoryID,
     NULL,
@@ -613,7 +616,7 @@ SELECT
     DATE_ADD(CURDATE(), INTERVAL 5 MONTH),
     0.00,
     'ACTIVE',
-    'Personal technology upgrade goal.'
+    'Mục tiêu nâng cấp thiết bị công nghệ cá nhân.'
 FROM Users u
 JOIN BankAccounts ba ON u.UserID = ba.UserID
 JOIN SavingGoalCategories c ON c.CategoryKey = 'LAPTOP'
@@ -637,23 +640,95 @@ INSERT INTO SavingGoals (
 SELECT
     u.UserID,
     MIN(ba.AccountID),
-    'Personal Saving',
+    'Tiết kiệm cá nhân',
     'SAVE_UP',
     c.GoalCategoryID,
-    'My custom saving plan',
+    'Kế hoạch tiết kiệm cá nhân tùy chỉnh',
     15000000.00,
     2000000.00,
     CURDATE(),
     DATE_ADD(CURDATE(), INTERVAL 6 MONTH),
     0.00,
     'ACTIVE',
-    'Custom saving goal.'
+    'Mục tiêu tiết kiệm tùy chỉnh.'
 FROM Users u
 JOIN BankAccounts ba ON u.UserID = ba.UserID
 JOIN SavingGoalCategories c ON c.CategoryKey = 'OTHER'
 GROUP BY u.UserID, c.GoalCategoryID;
 
--- 10. GOAL CONTRIBUTIONS
+-- 10. DEBT / PAY-DOWN GOALS
+-- 10.1 Credit card debt goal for every user
+INSERT INTO SavingGoals (
+    UserID,
+    LinkedAccountID,
+    GoalName,
+    GoalType,
+    GoalCategoryID,
+    CustomGoalCategoryName,
+    TargetAmount,
+    CurrentAmount,
+    StartDate,
+    TargetDate,
+    AnnualGrowthRate,
+    Status,
+    Notes
+)
+SELECT
+    u.UserID,
+    MIN(ba.AccountID),
+    'Nợ thẻ tín dụng',
+    'PAY_DOWN',
+    c.GoalCategoryID,
+    NULL,
+    18000000.00 + (u.UserID * 500000.00),
+    3500000.00 + (u.UserID * 200000.00),
+    DATE_SUB(CURDATE(), INTERVAL 2 MONTH),
+    DATE_ADD(CURDATE(), INTERVAL 8 MONTH),
+    0.00,
+    'ACTIVE',
+    'Mục tiêu giảm dần dư nợ thẻ tín dụng theo tháng.'
+FROM Users u
+JOIN BankAccounts ba ON u.UserID = ba.UserID
+JOIN SavingGoalCategories c ON c.CategoryKey = 'OTHER'
+GROUP BY u.UserID, c.GoalCategoryID;
+
+-- 10.2 One additional debt goal for demo variety
+INSERT INTO SavingGoals (
+    UserID,
+    LinkedAccountID,
+    GoalName,
+    GoalType,
+    GoalCategoryID,
+    CustomGoalCategoryName,
+    TargetAmount,
+    CurrentAmount,
+    StartDate,
+    TargetDate,
+    AnnualGrowthRate,
+    Status,
+    Notes
+)
+SELECT
+    u.UserID,
+    MIN(ba.AccountID),
+    'Khoản vay mua xe',
+    'PAY_DOWN',
+    c.GoalCategoryID,
+    NULL,
+    90000000.00,
+    12000000.00,
+    DATE_SUB(CURDATE(), INTERVAL 3 MONTH),
+    DATE_ADD(CURDATE(), INTERVAL 24 MONTH),
+    0.00,
+    'ACTIVE',
+    'Khoản vay dài hạn, theo dõi tiến độ trả nợ định kỳ.'
+FROM Users u
+JOIN BankAccounts ba ON u.UserID = ba.UserID
+JOIN SavingGoalCategories c ON c.CategoryKey = 'CAR'
+WHERE u.UserID = 10
+GROUP BY u.UserID, c.GoalCategoryID;
+
+-- 11. GOAL CONTRIBUTIONS
 INSERT INTO GoalContributions (
     GoalID,
     UserID,
@@ -670,9 +745,52 @@ SELECT
     2000000.00,
     'DEPOSIT',
     CURDATE(),
-    'Initial goal contribution'
+    'Khoản đóng góp mục tiêu ban đầu'
 FROM SavingGoals g
-WHERE g.GoalName IN ('Emergency Fund', 'Buy a Laptop');
+WHERE g.GoalName IN ('Quỹ khẩn cấp', 'Mua laptop');
+
+INSERT INTO GoalContributions (
+    GoalID,
+    UserID,
+    AccountID,
+    Amount,
+    ContributionType,
+    ContributionDate,
+    Description
+)
+SELECT
+    g.GoalID,
+    g.UserID,
+    g.LinkedAccountID,
+    1200000.00,
+    'DEPOSIT',
+    DATE_SUB(CURDATE(), INTERVAL 20 DAY),
+    'Thanh toán nợ kỳ gần nhất'
+FROM SavingGoals g
+WHERE g.GoalType = 'PAY_DOWN'
+  AND g.GoalName = 'Nợ thẻ tín dụng';
+
+INSERT INTO GoalContributions (
+    GoalID,
+    UserID,
+    AccountID,
+    Amount,
+    ContributionType,
+    ContributionDate,
+    Description
+)
+SELECT
+    g.GoalID,
+    g.UserID,
+    g.LinkedAccountID,
+    2500000.00,
+    'DEPOSIT',
+    DATE_SUB(CURDATE(), INTERVAL 10 DAY),
+    'Thanh toán trả nợ khoản vay xe'
+FROM SavingGoals g
+WHERE g.GoalType = 'PAY_DOWN'
+  AND g.GoalName = 'Khoản vay mua xe'
+  AND g.UserID = 10;
 
 -- SMART BUDGET SETTINGS
 INSERT INTO BudgetSettings (
@@ -687,12 +805,12 @@ INSERT INTO BudgetSettings (
 )
 VALUES
     (1, 2026, 4, 23500000.00, 4500000.00, JSON_ARRAY(
-        JSON_OBJECT('name', 'Rent', 'amount', 3500000),
-        JSON_OBJECT('name', 'Internet', 'amount', 1000000)
+        JSON_OBJECT('item_name', 'Thuê nhà', 'amount', 3500000, 'category_id', 8),
+        JSON_OBJECT('item_name', 'Internet', 'amount', 1000000, 'category_id', 7)
     ), 2500000.00, 1500000.00),
     (10, 2026, 4, 16800000.00, 5000000.00, JSON_ARRAY(
-        JSON_OBJECT('name', 'Rent', 'amount', 4000000),
-        JSON_OBJECT('name', 'Phone and internet', 'amount', 1000000)
+        JSON_OBJECT('item_name', 'Thuê nhà', 'amount', 4000000, 'category_id', 8),
+        JSON_OBJECT('item_name', 'Điện thoại và internet', 'amount', 1000000, 'category_id', 7)
     ), 2000000.00, 1000000.00);
 
 -- TRANSACTION CATEGORY RULES
@@ -719,7 +837,7 @@ UPDATE BudgetPlans
 SET
     IsSoftLocked = 1,
     BudgetPriority = 'LOW',
-    Notes = 'Soft locked to reduce unnecessary spending.'
+    Notes = 'Khóa mềm để giảm chi tiêu không cần thiết.'
 WHERE CategoryID IN (4, 5)
   AND BudgetYear = 2026
   AND BudgetMonth = 4;
@@ -727,7 +845,7 @@ WHERE CategoryID IN (4, 5)
 UPDATE BudgetPlans
 SET
     BudgetPriority = 'HIGH',
-    Notes = 'Essential monthly spending.'
+    Notes = 'Chi tiêu thiết yếu hằng tháng.'
 WHERE CategoryID IN (1, 8, 7)
   AND BudgetYear = 2026
   AND BudgetMonth = 4;

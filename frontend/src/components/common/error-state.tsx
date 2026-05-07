@@ -5,7 +5,7 @@ type ErrorStateProps = {
 };
 
 export function ErrorState({
-  title = "Something went wrong",
+  title = "Đã xảy ra lỗi",
   detail,
   onRetry
 }: ErrorStateProps) {
@@ -19,7 +19,7 @@ export function ErrorState({
           onClick={onRetry}
           className="focus-ring mt-4 rounded-md border border-primary px-3 py-2 text-sm text-primary hover:bg-primary/10"
         >
-          Retry
+          Thử lại
         </button>
       ) : null}
     </div>

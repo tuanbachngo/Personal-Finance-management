@@ -3,7 +3,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   MessageCircle,
-  Pencil,
   Plus,
   Settings2,
   Trash2,
@@ -14,10 +13,13 @@ import { useEffect, useMemo, useState } from "react";
 import { AuthGuard } from "@/components/auth/auth-guard";
 import { ErrorState } from "@/components/common/error-state";
 import { LoadingSkeleton } from "@/components/common/loading-skeleton";
+import { BudgetItemCard } from "@/components/finance/budget-item-card";
 import { AppShell } from "@/components/layout/app-shell";
+import { useReminderVisibility } from "@/hooks/use-reminder-visibility";
 import {
   canISpend,
   createBudgetPlan,
+  getDashboardReminders,
   deleteBudgetPlan,
   extractApiErrorMessage,
   getBudgetOverview,
@@ -26,6 +28,7 @@ import {
   updateBudgetPlan,
   upsertBudgetSettings,
 } from "@/lib/api-client";
+import { getCategoryIcon } from "@/lib/category-icon";
 import { formatCurrency } from "@/lib/format";
 import { useAuth } from "@/providers/auth-provider";
 import { useUserScope } from "@/providers/user-scope-provider";
@@ -45,6 +48,7 @@ type BudgetFormState = {
 type FixedExpenseDraft = {
   id: string;
   item_name: string;
+  category_id: number;
   amount: string;
 };
 
@@ -128,6 +132,57 @@ function paceBadgeClass(status: string): string {
   return "border-danger bg-danger/15 text-danger";
 }
 
+function budgetHealthLabel(value: string): string {
+  const normalized = String(value || "").toUpperCase();
+  if (normalized === "HEALTHY") {
+    return "ỔN ĐỊNH";
+  }
+  if (normalized === "CAUTION") {
+    return "CẦN LƯU Ý";
+  }
+  if (normalized === "RISKY") {
+    return "RỦI RO";
+  }
+  if (normalized === "OVERPLANNED") {
+    return "VƯỢT KẾ HOẠCH";
+  }
+  return normalized || "KHÁC";
+}
+
+function paceStatusLabel(value: string): string {
+  const normalized = String(value || "").toUpperCase();
+  if (normalized === "ON_TRACK") {
+    return "ĐÚNG TIẾN ĐỘ";
+  }
+  if (normalized === "WATCH") {
+    return "THEO DÕI";
+  }
+  if (normalized === "OVER_PACE") {
+    return "VƯỢT NHỊP";
+  }
+  if (normalized === "EXCEEDED") {
+    return "VƯỢT MỨC";
+  }
+  return normalized || "KHÁC";
+}
+
+function decisionLabel(value: string): string {
+  const normalized = String(value || "").toUpperCase();
+  if (normalized === "SAFE") {
+    return "AN TOÀN";
+  }
+  if (normalized === "CAUTION") {
+    return "CẦN LƯU Ý";
+  }
+  if (normalized === "EXCEEDS_BUDGET") {
+    return "VƯỢT NGÂN SÁCH";
+  }
+  if (normalized === "SOFT_LOCKED") {
+    return "ĐANG KHÓA MỀM";
+  }
+  return normalized || "KHÁC";
+}
+
 function progressPercent(planned: number, spent: number): number {
   if (planned <= 0) {
     return 0;
@@ -186,7 +241,7 @@ export default function BudgetsPage() {
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth() + 1;
 
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, token } = useAuth();
   const { selectedUserId } = useUserScope();
   const userId = isAdmin ? selectedUserId ?? user?.UserID : user?.UserID;
 
@@ -242,6 +297,17 @@ export default function BudgetsPage() {
     enabled: Boolean(userId),
   });
 
+  const remindersQuery = useQuery({
+    queryKey: ["dashboard-reminders", userId],
+    queryFn: () => getDashboardReminders(userId),
+    enabled: Boolean(userId),
+  });
+
+  const { hiddenReminderIds, dismissReminder } = useReminderVisibility({
+    userId,
+    accessToken: token,
+  });
+
   useEffect(() => {
     if (!settingsQuery.data) {
       return;
@@ -253,6 +319,7 @@ export default function BudgetsPage() {
         ? incomingItems.map((item) => ({
             id: makeDraftId(),
             item_name: item.item_name,
+            category_id: Number(item.category_id || 0),
             amount: toFormattedInteger(item.amount),
           }))
         : [];
@@ -350,18 +417,18 @@ export default function BudgetsPage() {
       return;
     }
     if (!budgetForm.categoryId) {
-      alert("Please select a category.");
+      alert("Vui lòng chọn danh mục.");
       return;
     }
 
     const plannedAmount = parseInteger(budgetForm.plannedAmount);
     const warningPercent = parseInteger(budgetForm.warningPercent);
     if (plannedAmount <= 0) {
-      alert("Planned amount must be greater than 0.");
+      alert("Số tiền dự kiến phải lớn hơn 0.");
       return;
     }
     if (warningPercent < 1 || warningPercent > 100) {
-      alert("Warning threshold must be between 1 and 100.");
+      alert("Ngưỡng cảnh báo phải nằm trong khoảng từ 1 đến 100.");
       return;
     }
 
@@ -387,7 +454,7 @@ export default function BudgetsPage() {
         });
       }
     } catch (error) {
-      alert(extractApiErrorMessage(error, "Failed to save budget plan."));
+      alert(extractApiErrorMessage(error, "Không thể lưu kế hoạch ngân sách."));
     }
   };
 
@@ -395,14 +462,14 @@ export default function BudgetsPage() {
     if (!userId) {
       return;
     }
-    const confirmed = window.confirm(`Delete budget for ${row.category_name}?`);
+    const confirmed = window.confirm(`Xóa ngân sách cho danh mục "${row.category_name}"?`);
     if (!confirmed) {
       return;
     }
     try {
       await deleteBudgetMutation.mutateAsync({ budgetId: row.budget_id, uid: userId });
     } catch (error) {
-      alert(extractApiErrorMessage(error, "Failed to delete budget plan."));
+      alert(extractApiErrorMessage(error, "Không thể xóa kế hoạch ngân sách."));
     }
   };
 
@@ -414,9 +481,16 @@ export default function BudgetsPage() {
     const normalizedItems = settingsForm.fixedExpenseItems
       .map((item) => ({
         item_name: item.item_name.trim(),
+        category_id: Number(item.category_id || 0),
         amount: parseInteger(item.amount),
       }))
       .filter((item) => item.item_name.length > 0 && item.amount >= 0);
+
+    const hasMissingCategory = normalizedItems.some((item) => item.category_id <= 0);
+    if (hasMissingCategory) {
+      alert("Mỗi khoản chi cố định cần chọn một danh mục.");
+      return;
+    }
 
     try {
       await saveSettingsMutation.mutateAsync({
@@ -430,7 +504,7 @@ export default function BudgetsPage() {
         fixed_expense_items: normalizedItems,
       });
     } catch (error) {
-      alert(extractApiErrorMessage(error, "Failed to save budget settings."));
+      alert(extractApiErrorMessage(error, "Không thể lưu thiết lập ngân sách."));
     }
   };
 
@@ -443,7 +517,7 @@ export default function BudgetsPage() {
       ...prev,
       fixedExpenseItems: [
         ...prev.fixedExpenseItems,
-        { id: makeDraftId(), item_name: "", amount: "" },
+        { id: makeDraftId(), item_name: "", category_id: 0, amount: "" },
       ],
     }));
   };
@@ -457,8 +531,8 @@ export default function BudgetsPage() {
 
   const updateFixedExpenseItem = (
     id: string,
-    field: "item_name" | "amount",
-    value: string,
+    field: "item_name" | "amount" | "category_id",
+    value: string | number,
   ) => {
     setSettingsForm((prev) => ({
       ...prev,
@@ -467,7 +541,11 @@ export default function BudgetsPage() {
           ? {
               ...item,
               [field]:
-                field === "amount" ? formatWithCommas(value) : value,
+                field === "amount"
+                  ? formatWithCommas(String(value))
+                  : field === "category_id"
+                    ? Number(value || 0)
+                    : value,
             }
           : item,
       ),
@@ -476,12 +554,12 @@ export default function BudgetsPage() {
 
   const handleCheckCanSpend = async () => {
     if (!userId || !canSpendCategoryId) {
-      setCanSpendError("Please select a category.");
+      setCanSpendError("Vui lòng chọn danh mục.");
       return;
     }
     const amount = parseInteger(canSpendAmount);
     if (amount <= 0) {
-      setCanSpendError("Please enter amount greater than 0.");
+      setCanSpendError("Vui lòng nhập số tiền lớn hơn 0.");
       return;
     }
 
@@ -497,16 +575,24 @@ export default function BudgetsPage() {
       });
       setCanSpendResult(result);
     } catch (error) {
-      setCanSpendError(extractApiErrorMessage(error, "Failed to check spending decision."));
+      setCanSpendError(extractApiErrorMessage(error, "Không thể kiểm tra khoản chi này."));
     }
   };
 
-  const isLoading = overviewQuery.isLoading || settingsQuery.isLoading;
-  const hasQueryError = overviewQuery.isError || settingsQuery.isError;
+  const isLoading = overviewQuery.isLoading || settingsQuery.isLoading || remindersQuery.isLoading;
+  const hasQueryError = overviewQuery.isError || settingsQuery.isError || remindersQuery.isError;
 
   return (
     <AuthGuard>
-      <AppShell title="Budgets" subtitle="Smart guardrails for monthly spending">
+      <AppShell
+        title="Ngân sách"
+        subtitle="Thiết lập giới hạn thông minh cho chi tiêu theo tháng"
+        notificationCenter={{
+          allReminders: remindersQuery.data || [],
+          hiddenReminderIds,
+          onDismissReminder: dismissReminder,
+        }}
+      >
         <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-2 rounded-xl border border-border bg-surface p-2">
             <select
@@ -516,7 +602,7 @@ export default function BudgetsPage() {
             >
               {Array.from({ length: 12 }).map((_, index) => (
                 <option key={index + 1} value={index + 1}>
-                  Month {index + 1}
+                  Tháng {index + 1}
                 </option>
               ))}
             </select>
@@ -535,7 +621,7 @@ export default function BudgetsPage() {
               onClick={() => setIsSettingsModalOpen(true)}
             >
               <Settings2 size={16} />
-              Budget Settings
+              Thiết lập ngân sách
             </button>
             <button
               type="button"
@@ -543,20 +629,21 @@ export default function BudgetsPage() {
               onClick={openAddBudgetModal}
             >
               <Plus size={16} />
-              Add Budget Plan
+              Thêm kế hoạch ngân sách
             </button>
           </div>
         </div>
 
-        {isLoading ? <LoadingSkeleton label="Loading smart budget..." /> : null}
+        {isLoading ? <LoadingSkeleton label="Đang tải dữ liệu ngân sách..." /> : null}
 
         {hasQueryError ? (
           <ErrorState
-            title="Failed to load budget data"
-            detail={extractApiErrorMessage(overviewQuery.error || settingsQuery.error)}
+            title="Không thể tải dữ liệu ngân sách"
+            detail={extractApiErrorMessage(overviewQuery.error || settingsQuery.error || remindersQuery.error)}
             onRetry={() => {
               overviewQuery.refetch();
               settingsQuery.refetch();
+              remindersQuery.refetch();
             }}
           />
         ) : null}
@@ -565,25 +652,25 @@ export default function BudgetsPage() {
           <div className="space-y-5">
             <section className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-base font-bold text-text">Monthly Overview</h2>
+                <h2 className="text-base font-bold text-text">Tổng quan tháng</h2>
                 <span
                   className={`inline-flex rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-wide ${healthBadgeClass(
                     overviewQuery.data.budget_health,
                   )}`}
                 >
-                  {overviewQuery.data.budget_health}
+                  {budgetHealthLabel(overviewQuery.data.budget_health)}
                 </span>
               </div>
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <CompactMetricCard label="Expected Income" value={overviewQuery.data.expected_income} />
+                <CompactMetricCard label="Thu nhập dự kiến" value={overviewQuery.data.expected_income} />
                 <CompactMetricCard
-                  label="Available to Budget"
+                  label="Có thể phân bổ"
                   value={overviewQuery.data.available_to_budget}
                   tone={overviewQuery.data.available_to_budget >= 0 ? "success" : "danger"}
                 />
-                <CompactMetricCard label="Total Planned" value={overviewQuery.data.total_planned_budget} />
+                <CompactMetricCard label="Tổng đã lập kế hoạch" value={overviewQuery.data.total_planned_budget} />
                 <CompactMetricCard
-                  label="Remaining to Allocate"
+                  label="Còn lại để phân bổ"
                   value={overviewQuery.data.remaining_to_allocate}
                   tone={overviewQuery.data.remaining_to_allocate >= 0 ? "success" : "warning"}
                 />
@@ -591,7 +678,7 @@ export default function BudgetsPage() {
 
               {overviewQuery.data.warnings.length > 0 ? (
                 <div className="rounded-xl border border-warning/40 bg-warning/10 p-4">
-                  <p className="text-sm font-semibold text-warning">Warnings</p>
+                  <p className="text-sm font-semibold text-warning">Cảnh báo</p>
                   <div className="mt-1 space-y-1">
                     {overviewQuery.data.warnings.map((warning, index) => (
                       <p key={`${warning}-${index}`} className="text-sm text-warning">
@@ -604,81 +691,60 @@ export default function BudgetsPage() {
             </section>
 
             <section className="rounded-xl border border-border bg-surface p-5 shadow-sm">
-              <h2 className="mb-4 text-lg font-bold text-text">Category Budgets</h2>
-              {categoryGuardrails.length === 0 ? (
-                <p className="text-sm text-muted">No budget plans for this month.</p>
+              <h2 className="mb-4 text-lg font-bold text-text">Chi phí cố định</h2>
+              {overviewQuery.data.fixed_expense_cards.length === 0 ? (
+                <p className="text-sm text-muted">Chưa có khoản chi cố định cho tháng này.</p>
               ) : (
                 <div className="space-y-3">
-                  {categoryGuardrails.map((row) => {
-                    const pct = progressPercent(row.planned_amount, row.spent_amount);
-                    const tone = alertLevelTone(row.alert_level);
-                    return (
-                      <article key={row.budget_id} className="rounded-xl border border-border bg-bg p-4">
-                        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                          <div>
-                            <h3 className="text-base font-bold text-text">{row.category_name}</h3>
-                            <p className="text-sm text-muted">
-                              Planned {formatCurrency(row.planned_amount)} | Spent{" "}
-                              {formatCurrency(row.spent_amount)} | Remaining{" "}
-                              {formatCurrency(row.remaining_budget)}
-                            </p>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className={`rounded-full border px-2 py-1 text-xs font-bold uppercase ${paceBadgeClass(row.spending_pace_status)}`}>
-                              {row.spending_pace_status}
-                            </span>
-                            {tone === "danger" ? (
-                              <span className="rounded-full border border-danger/40 bg-danger/10 px-2 py-1 text-xs font-bold uppercase text-danger">
-                                EXCEEDED
-                              </span>
-                            ) : tone === "warning" ? (
-                              <span className="rounded-full border border-warning/40 bg-warning/10 px-2 py-1 text-xs font-bold uppercase text-warning">
-                                WARNING
-                              </span>
-                            ) : (
-                              <span className="rounded-full border border-border bg-surface px-2 py-1 text-xs font-bold uppercase text-muted">
-                                NORMAL
-                              </span>
-                            )}
-                            {row.is_soft_locked === 1 ? (
-                              <span className="rounded-full border border-danger/40 bg-danger/10 px-2 py-1 text-xs font-bold uppercase text-danger">
-                                Soft locked
-                              </span>
-                            ) : null}
-                          </div>
-                        </div>
+                  {overviewQuery.data.fixed_expense_cards.map((card) => (
+                    <BudgetItemCard
+                      key={card.card_id}
+                      icon={card.category_icon}
+                      iconName={card.category_name}
+                      title={card.item_name}
+                      subtitle={card.category_name}
+                      plannedAmount={card.planned_amount}
+                      spentAmount={card.spent_amount}
+                      remainingAmount={card.remaining_amount}
+                      usagePercent={card.usage_percent}
+                      alertLevel={card.alert_level}
+                      paceStatus={card.spending_pace_status}
+                      isSoftLocked={false}
+                      safePerDay={card.safe_daily_spend}
+                      safePerWeek={card.safe_weekly_spend}
+                      onEdit={() => setIsSettingsModalOpen(true)}
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
 
-                        <div className="mt-3 h-2 w-full rounded-full bg-border">
-                          <div className="h-2 rounded-full bg-primary" style={{ width: `${pct}%` }} />
-                        </div>
-
-                        <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-muted">
-                          <span>Safe/day: {formatCurrency(row.safe_daily_spend)}</span>
-                          <span>Safe/week: {formatCurrency(row.safe_weekly_spend)}</span>
-                          <span>Priority: {row.budget_priority}</span>
-                        </div>
-
-                        <div className="mt-4 flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={() => openEditBudgetModal(row)}
-                            className="focus-ring inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-3 py-2 text-xs font-bold text-text transition hover:bg-surface-hover"
-                          >
-                            <Pencil size={12} />
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleBudgetDelete(row)}
-                            className="focus-ring inline-flex items-center gap-1 rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-xs font-bold text-danger transition hover:bg-danger/20"
-                          >
-                            <Trash2 size={12} />
-                            Delete
-                          </button>
-                        </div>
-                      </article>
-                    );
-                  })}
+            <section className="rounded-xl border border-border bg-surface p-5 shadow-sm">
+              <h2 className="mb-4 text-lg font-bold text-text">Ngân sách theo danh mục</h2>
+              {categoryGuardrails.length === 0 ? (
+                <p className="text-sm text-muted">Chưa có kế hoạch ngân sách cho tháng này.</p>
+              ) : (
+                <div className="space-y-3">
+                  {categoryGuardrails.map((row) => (
+                    <BudgetItemCard
+                      key={row.budget_id}
+                      icon={row.category_icon}
+                      iconName={row.category_name}
+                      title={row.category_name}
+                      plannedAmount={row.planned_amount}
+                      spentAmount={row.spent_amount}
+                      remainingAmount={row.remaining_budget}
+                      usagePercent={row.usage_percent}
+                      alertLevel={row.alert_level}
+                      paceStatus={row.spending_pace_status}
+                      isSoftLocked={row.is_soft_locked === 1}
+                      safePerDay={row.safe_daily_spend}
+                      safePerWeek={row.safe_weekly_spend}
+                      priority={row.budget_priority}
+                      onEdit={() => openEditBudgetModal(row)}
+                      onDelete={() => handleBudgetDelete(row)}
+                    />
+                  ))}
                 </div>
               )}
             </section>
@@ -689,7 +755,7 @@ export default function BudgetsPage() {
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm">
             <div className="w-full max-w-3xl rounded-2xl border border-border bg-surface p-6 shadow-2xl">
               <div className="mb-5 flex items-center justify-between">
-                <h2 className="text-xl font-bold text-text">Budget Settings</h2>
+                <h2 className="text-xl font-bold text-text">Thiết lập ngân sách</h2>
                 <button
                   type="button"
                   className="rounded-md p-1 text-muted transition hover:bg-surface-hover hover:text-text"
@@ -701,7 +767,7 @@ export default function BudgetsPage() {
 
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="text-sm">
-                  <span className="mb-1 block text-muted">Expected monthly income</span>
+                  <span className="mb-1 block text-muted">Thu nhập dự kiến theo tháng</span>
                   <input
                     className="focus-ring w-full rounded-lg border border-border bg-bg px-3 py-2 text-right text-text"
                     value={settingsForm.expectedIncome}
@@ -714,13 +780,13 @@ export default function BudgetsPage() {
                   />
                 </label>
                 <div className="rounded-lg border border-border bg-bg p-3 text-sm">
-                  <p className="text-xs text-muted">Fixed expense total</p>
+                  <p className="text-xs text-muted">Tổng chi phí cố định</p>
                   <p className="mt-1 font-mono text-lg font-bold text-text">
                     {formatCurrency(fixedExpenseTotal)}
                   </p>
                 </div>
                 <label className="text-sm">
-                  <span className="mb-1 block text-muted">Goal contribution target</span>
+                  <span className="mb-1 block text-muted">Mục tiêu đóng góp cho mục tiêu tài chính</span>
                   <input
                     className="focus-ring w-full rounded-lg border border-border bg-bg px-3 py-2 text-right text-text"
                     value={settingsForm.goalContributionTarget}
@@ -733,7 +799,7 @@ export default function BudgetsPage() {
                   />
                 </label>
                 <label className="text-sm">
-                  <span className="mb-1 block text-muted">Emergency buffer</span>
+                  <span className="mb-1 block text-muted">Quỹ dự phòng khẩn cấp</span>
                   <input
                     className="focus-ring w-full rounded-lg border border-border bg-bg px-3 py-2 text-right text-text"
                     value={settingsForm.emergencyBuffer}
@@ -749,33 +815,47 @@ export default function BudgetsPage() {
 
               <div className="mt-5 rounded-xl border border-border bg-bg p-4">
                 <div className="mb-3 flex items-center justify-between">
-                  <h3 className="text-sm font-bold text-text">Fixed Expense Items</h3>
+                  <h3 className="text-sm font-bold text-text">Danh sách chi phí cố định</h3>
                   <button
                     type="button"
                     onClick={addFixedExpenseItem}
                     className="focus-ring inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-bold text-text transition hover:bg-surface-hover"
                   >
                     <Plus size={12} />
-                    Add item
+                    Thêm khoản
                   </button>
                 </div>
 
                 {settingsForm.fixedExpenseItems.length === 0 ? (
                   <p className="text-xs text-muted">
-                    No fixed expense item yet. Add recurring monthly essentials here.
+                    Chưa có khoản chi cố định. Hãy thêm các khoản chi lặp lại hằng tháng tại đây.
                   </p>
                 ) : (
                   <div className="space-y-2">
                     {settingsForm.fixedExpenseItems.map((item) => (
-                      <div key={item.id} className="grid gap-2 md:grid-cols-[1fr_180px_auto]">
+                      <div key={item.id} className="grid gap-2 md:grid-cols-[1fr_220px_160px_auto]">
                         <input
                           className="focus-ring rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text"
-                          placeholder="Item name (e.g. Rent)"
+                          placeholder="Tên khoản (ví dụ: Tiền nhà)"
                           value={item.item_name}
                           onChange={(event) =>
                             updateFixedExpenseItem(item.id, "item_name", event.target.value)
                           }
                         />
+                        <select
+                          className="focus-ring rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text"
+                          value={item.category_id}
+                          onChange={(event) =>
+                            updateFixedExpenseItem(item.id, "category_id", Number(event.target.value))
+                          }
+                        >
+                          <option value={0}>Chọn danh mục</option>
+                          {categoryOptions.map((row) => (
+                            <option key={row.CategoryID} value={row.CategoryID}>
+                              {getCategoryIcon(row.IconEmoji, row.CategoryName)} {row.CategoryName}
+                            </option>
+                          ))}
+                        </select>
                         <input
                           className="focus-ring rounded-lg border border-border bg-surface px-3 py-2 text-right text-sm text-text"
                           placeholder="0"
@@ -803,14 +883,14 @@ export default function BudgetsPage() {
                   className="focus-ring rounded-lg border border-border px-4 py-2 text-sm font-semibold text-text transition hover:bg-surface-hover"
                   onClick={handleResetSettings}
                 >
-                  Reset to 0
+                  Đặt lại về 0
                 </button>
                 <button
                   type="button"
                   className="focus-ring rounded-lg border border-border px-4 py-2 text-sm font-semibold text-text transition hover:bg-surface-hover"
                   onClick={() => setIsSettingsModalOpen(false)}
                 >
-                  Close
+                  Đóng
                 </button>
                 <button
                   type="button"
@@ -818,7 +898,7 @@ export default function BudgetsPage() {
                   disabled={saveSettingsMutation.isPending}
                   className="focus-ring rounded-lg bg-primary px-4 py-2 text-sm font-bold text-bg transition hover:bg-primary/90 disabled:opacity-60"
                 >
-                  {saveSettingsMutation.isPending ? "Saving..." : "Save"}
+                  {saveSettingsMutation.isPending ? "Đang lưu..." : "Lưu"}
                 </button>
               </div>
             </div>
@@ -830,7 +910,7 @@ export default function BudgetsPage() {
             <div className="w-full max-w-2xl rounded-2xl border border-border bg-surface p-6 shadow-2xl">
               <div className="mb-5 flex items-center justify-between">
                 <h2 className="text-xl font-bold text-text">
-                  {budgetModalMode === "ADD" ? "Add Budget Plan" : "Edit Budget Plan"}
+                  {budgetModalMode === "ADD" ? "Thêm kế hoạch ngân sách" : "Sửa kế hoạch ngân sách"}
                 </h2>
                 <button
                   type="button"
@@ -846,7 +926,7 @@ export default function BudgetsPage() {
 
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="text-sm">
-                  <span className="mb-1 block text-muted">Category</span>
+                  <span className="mb-1 block text-muted">Danh mục</span>
                   <select
                     className="focus-ring w-full rounded-lg border border-border bg-bg px-3 py-2 text-text"
                     value={budgetForm.categoryId}
@@ -857,17 +937,17 @@ export default function BudgetsPage() {
                       }))
                     }
                   >
-                    <option value={0}>Select category</option>
+                    <option value={0}>Chọn danh mục</option>
                     {categoryOptions.map((row) => (
                       <option key={row.CategoryID} value={row.CategoryID}>
-                        {row.CategoryName}
+                        {getCategoryIcon(row.IconEmoji, row.CategoryName)} {row.CategoryName}
                       </option>
                     ))}
                   </select>
                 </label>
 
                 <label className="text-sm">
-                  <span className="mb-1 block text-muted">Planned amount</span>
+                  <span className="mb-1 block text-muted">Số tiền dự kiến</span>
                   <input
                     className="focus-ring w-full rounded-lg border border-border bg-bg px-3 py-2 text-right text-text"
                     value={budgetForm.plannedAmount}
@@ -881,7 +961,7 @@ export default function BudgetsPage() {
                 </label>
 
                 <label className="text-sm">
-                  <span className="mb-1 block text-muted">Warning threshold (%)</span>
+                  <span className="mb-1 block text-muted">Ngưỡng cảnh báo (%)</span>
                   <input
                     className="focus-ring w-full rounded-lg border border-border bg-bg px-3 py-2 text-right text-text"
                     value={budgetForm.warningPercent}
@@ -895,7 +975,7 @@ export default function BudgetsPage() {
                 </label>
 
                 <label className="text-sm">
-                  <span className="mb-1 block text-muted">Soft lock</span>
+                  <span className="mb-1 block text-muted">Khóa mềm</span>
                   <select
                     className="focus-ring w-full rounded-lg border border-border bg-bg px-3 py-2 text-text"
                     value={budgetForm.isSoftLocked}
@@ -906,13 +986,13 @@ export default function BudgetsPage() {
                       }))
                     }
                   >
-                    <option value={0}>No</option>
-                    <option value={1}>Yes</option>
+                    <option value={0}>Không</option>
+                    <option value={1}>Có</option>
                   </select>
                 </label>
 
                 <label className="text-sm">
-                  <span className="mb-1 block text-muted">Priority</span>
+                  <span className="mb-1 block text-muted">Mức ưu tiên</span>
                   <select
                     className="focus-ring w-full rounded-lg border border-border bg-bg px-3 py-2 text-text"
                     value={budgetForm.budgetPriority}
@@ -923,14 +1003,14 @@ export default function BudgetsPage() {
                       }))
                     }
                   >
-                    <option value="LOW">Low</option>
-                    <option value="MEDIUM">Medium</option>
-                    <option value="HIGH">High</option>
+                    <option value="LOW">Thấp</option>
+                    <option value="MEDIUM">Trung bình</option>
+                    <option value="HIGH">Cao</option>
                   </select>
                 </label>
 
                 <label className="text-sm md:col-span-2">
-                  <span className="mb-1 block text-muted">Notes</span>
+                  <span className="mb-1 block text-muted">Ghi chú</span>
                   <input
                     className="focus-ring w-full rounded-lg border border-border bg-bg px-3 py-2 text-text"
                     value={budgetForm.notes}
@@ -952,7 +1032,7 @@ export default function BudgetsPage() {
                     onClick={() => handleBudgetDelete(editingBudget)}
                     disabled={deleteBudgetMutation.isPending}
                   >
-                    Delete
+                    Xóa
                   </button>
                 ) : null}
                 <button
@@ -963,7 +1043,7 @@ export default function BudgetsPage() {
                     setEditingBudget(null);
                   }}
                 >
-                  Cancel
+                  Hủy
                 </button>
                 <button
                   type="button"
@@ -972,8 +1052,8 @@ export default function BudgetsPage() {
                   className="focus-ring rounded-lg bg-primary px-4 py-2 text-sm font-bold text-bg transition hover:bg-primary/90 disabled:opacity-60"
                 >
                   {createBudgetMutation.isPending || updateBudgetMutation.isPending
-                    ? "Saving..."
-                    : "Save"}
+                    ? "Đang lưu..."
+                    : "Lưu"}
                 </button>
               </div>
             </div>
@@ -982,7 +1062,7 @@ export default function BudgetsPage() {
 
         <button
           type="button"
-          aria-label="Open Can I Spend chat"
+          aria-label="Mở trợ lý kiểm tra khoản chi"
           className="focus-ring fixed bottom-6 right-6 z-40 inline-flex h-14 w-14 items-center justify-center rounded-full border border-primary/40 bg-primary text-bg shadow-xl transition hover:bg-primary/90"
           onClick={() => setIsCanSpendOpen((prev) => !prev)}
         >
@@ -992,7 +1072,7 @@ export default function BudgetsPage() {
         {isCanSpendOpen ? (
           <div className="fixed bottom-24 right-6 z-40 w-[min(360px,calc(100vw-2rem))] rounded-2xl border border-border bg-surface p-4 shadow-2xl">
             <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-bold text-text">Can I Spend?</h3>
+              <h3 className="text-sm font-bold text-text">Tôi có thể chi không?</h3>
               <button
                 type="button"
                 className="rounded-md p-1 text-muted transition hover:bg-surface-hover hover:text-text"
@@ -1004,23 +1084,23 @@ export default function BudgetsPage() {
 
             <div className="space-y-3">
               <label className="text-xs">
-                <span className="mb-1 block text-muted">Category</span>
+                <span className="mb-1 block text-muted">Danh mục</span>
                 <select
                   className="focus-ring w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm text-text"
                   value={canSpendCategoryId}
                   onChange={(event) => setCanSpendCategoryId(Number(event.target.value))}
                 >
-                  <option value={0}>Select category</option>
+                  <option value={0}>Chọn danh mục</option>
                   {categoryGuardrails.map((row) => (
                     <option key={row.budget_id} value={row.category_id}>
-                      {row.category_name}
+                      {getCategoryIcon(row.category_icon, row.category_name)} {row.category_name}
                     </option>
                   ))}
                 </select>
               </label>
 
               <label className="text-xs">
-                <span className="mb-1 block text-muted">Amount</span>
+                <span className="mb-1 block text-muted">Số tiền</span>
                 <input
                   className="focus-ring w-full rounded-lg border border-border bg-bg px-3 py-2 text-right text-sm text-text"
                   value={canSpendAmount}
@@ -1035,7 +1115,7 @@ export default function BudgetsPage() {
                 disabled={canSpendMutation.isPending}
                 className="focus-ring w-full rounded-lg bg-primary px-3 py-2 text-sm font-bold text-bg transition hover:bg-primary/90 disabled:opacity-60"
               >
-                {canSpendMutation.isPending ? "Checking..." : "Check"}
+                {canSpendMutation.isPending ? "Đang kiểm tra..." : "Kiểm tra"}
               </button>
             </div>
 
@@ -1048,19 +1128,19 @@ export default function BudgetsPage() {
             {canSpendResult ? (
               <div className="mt-3 space-y-2">
                 <div className="rounded-xl border border-border bg-bg p-3 text-xs text-muted">
-                  Can I spend {canSpendAmount || "0"} for this category?
+                  Tôi có thể chi {canSpendAmount || "0"} cho danh mục này không?
                 </div>
                 <div className="rounded-xl border border-primary/30 bg-primary/10 p-3 text-xs">
-                  <p className="font-bold text-primary">{canSpendResult.decision}</p>
+                  <p className="font-bold text-primary">{decisionLabel(canSpendResult.decision)}</p>
                   <p className="mt-1 text-text">{canSpendResult.message}</p>
                   <p className="mt-2 text-muted">
-                    Remaining before:{" "}
+                    Còn lại trước khi chi:{" "}
                     <span className="font-semibold text-text">
                       {formatCurrency(canSpendResult.remaining_before)}
                     </span>
                   </p>
                   <p className="text-muted">
-                    Remaining after:{" "}
+                    Còn lại sau khi chi:{" "}
                     <span className="font-semibold text-text">
                       {formatCurrency(canSpendResult.remaining_after)}
                     </span>

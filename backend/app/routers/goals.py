@@ -66,7 +66,7 @@ def create_goal(
     except ValueError as err:
         raise map_value_error_to_http(err, default_status=400) from err
 
-    return CreateEntityResponse(message="Goal created successfully.", id=goal_id)
+    return CreateEntityResponse(message="Đã tạo mục tiêu thành công.", id=goal_id)
 
 
 @router.put("/{goal_id}", response_model=ApiMessageResponse)
@@ -93,7 +93,7 @@ def update_goal(
     except ValueError as err:
         raise map_value_error_to_http(err, default_status=400) from err
 
-    return ApiMessageResponse(message="Goal updated successfully.")
+    return ApiMessageResponse(message="Đã cập nhật mục tiêu thành công.")
 
 
 @router.delete("/{goal_id}", response_model=ApiMessageResponse)
@@ -107,7 +107,7 @@ def delete_goal(
     except ValueError as err:
         raise map_value_error_to_http(err, default_status=400) from err
 
-    return ApiMessageResponse(message="Goal deleted successfully.")
+    return ApiMessageResponse(message="Đã xóa mục tiêu thành công.")
 
 
 @router.get("/{goal_id}/contributions", response_model=list[GoalContributionRecord])
@@ -144,6 +144,6 @@ def create_goal_contribution(
         raise map_value_error_to_http(err, default_status=400) from err
 
     return CreateEntityResponse(
-        message="Goal contribution added successfully.",
+        message="Đã thêm khoản đóng góp mục tiêu thành công.",
         id=contribution_id,
     )

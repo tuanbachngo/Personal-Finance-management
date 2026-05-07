@@ -26,16 +26,16 @@ export function IncomeDonutChart({ data }: Props) {
 
   return (
     <div className="h-[400px] w-full rounded-xl border border-border bg-surface p-5 shadow-sm">
-      <h2 className="mb-6 text-lg font-semibold tracking-tight text-text">Income by Account</h2>
+      <h2 className="mb-6 text-lg font-semibold tracking-tight text-text">Thu nhập theo tài khoản</h2>
       <div className="relative h-[300px] w-full">
         {data.length === 0 ? (
           <div className="flex h-full items-center justify-center">
-            <p className="text-sm text-muted">No income data</p>
+            <p className="text-sm text-muted">Không có dữ liệu thu nhập</p>
           </div>
         ) : (
           <>
             <div className="pointer-events-none absolute inset-0 mt-2 flex flex-col items-center justify-center">
-              <span className="text-xs uppercase tracking-wider text-muted">Total Income</span>
+              <span className="text-xs uppercase tracking-wider text-muted">Tổng thu nhập</span>
               <span className="mt-1 font-mono text-2xl font-bold tracking-tight text-text">
                 {formatNumber(totalIncome)}
               </span>

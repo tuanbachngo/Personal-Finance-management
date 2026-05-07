@@ -44,7 +44,7 @@ def create_profile(
         )
     except ValueError as err:
         raise map_value_error_to_http(err, default_status=400) from err
-    return CreateEntityResponse(message="User created successfully.", id=int(new_user_id))
+    return CreateEntityResponse(message="Đã tạo người dùng thành công.", id=int(new_user_id))
 
 
 @router.put("/profiles/{target_user_id}", response_model=ApiMessageResponse)
@@ -69,7 +69,7 @@ def update_profile(
         )
     except ValueError as err:
         raise map_value_error_to_http(err, default_status=400) from err
-    return ApiMessageResponse(message="User profile updated successfully.")
+    return ApiMessageResponse(message="Đã cập nhật hồ sơ người dùng thành công.")
 
 
 @router.delete("/profiles/{target_user_id}", response_model=ApiMessageResponse)
@@ -85,5 +85,4 @@ def delete_profile(
         )
     except ValueError as err:
         raise map_value_error_to_http(err, default_status=400) from err
-    return ApiMessageResponse(message="User deleted successfully.")
-
+    return ApiMessageResponse(message="Đã xóa người dùng thành công.")

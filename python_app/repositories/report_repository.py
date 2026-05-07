@@ -43,7 +43,10 @@ class ReportRepository:
     def get_all_categories(self) -> List[Dict[str, Any]]:
         return self._fetch_all(
             """
-            SELECT CategoryID, CategoryName
+            SELECT
+                CategoryID,
+                CategoryName,
+                COALESCE(NULLIF(IconEmoji, ''), '💸') AS IconEmoji
             FROM ExpenseCategories
             ORDER BY CategoryID
             """
@@ -337,6 +340,7 @@ class ReportRepository:
                 u.UserName,
                 b.CategoryID,
                 c.CategoryName,
+                COALESCE(NULLIF(c.IconEmoji, ''), '💸') AS CategoryIcon,
                 b.BudgetYear,
                 b.BudgetMonth,
                 b.PlannedAmount,
@@ -489,3 +493,69 @@ class ReportRepository:
             ),
         )
         return rows[0] if rows else None
+
+    def get_monthly_income_count(self, user_id: int, year: int, month: int) -> int:
+        row = self._fetch_one(
+            """
+            SELECT COUNT(*) AS TotalCount
+            FROM Income
+            WHERE UserID = %s
+              AND YEAR(IncomeDate) = %s
+              AND MONTH(IncomeDate) = %s
+            """,
+            (user_id, year, month),
+        )
+        return int((row or {}).get("TotalCount", 0) or 0)
+
+    def get_monthly_expense_count(self, user_id: int, year: int, month: int) -> int:
+        row = self._fetch_one(
+            """
+            SELECT COUNT(*) AS TotalCount
+            FROM Expenses
+            WHERE UserID = %s
+              AND YEAR(ExpenseDate) = %s
+              AND MONTH(ExpenseDate) = %s
+            """,
+            (user_id, year, month),
+        )
+        return int((row or {}).get("TotalCount", 0) or 0)
+
+    def get_monthly_expense_totals_by_category(
+        self,
+        user_id: int,
+        year: int,
+        month: int,
+    ) -> List[Dict[str, Any]]:
+        return self._fetch_all(
+            """
+            SELECT
+                CategoryID,
+                SUM(Amount) AS SpentAmount
+            FROM Expenses
+            WHERE UserID = %s
+              AND YEAR(ExpenseDate) = %s
+              AND MONTH(ExpenseDate) = %s
+            GROUP BY CategoryID
+            """,
+            (user_id, year, month),
+        )
+
+    def get_last_transaction_timestamp(self, user_id: int) -> Optional[Any]:
+        row = self._fetch_one(
+            """
+            SELECT
+                CASE
+                    WHEN income_max IS NULL AND expense_max IS NULL THEN NULL
+                    WHEN income_max IS NULL THEN expense_max
+                    WHEN expense_max IS NULL THEN income_max
+                    ELSE GREATEST(income_max, expense_max)
+                END AS LastTransactionAt
+            FROM (
+                SELECT
+                    (SELECT MAX(IncomeDate) FROM Income WHERE UserID = %s) AS income_max,
+                    (SELECT MAX(ExpenseDate) FROM Expenses WHERE UserID = %s) AS expense_max
+            ) t
+            """,
+            (user_id, user_id),
+        )
+        return (row or {}).get("LastTransactionAt")
