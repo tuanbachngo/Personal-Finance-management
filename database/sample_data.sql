@@ -849,3 +849,136 @@ SET
 WHERE CategoryID IN (1, 8, 7)
   AND BudgetYear = 2026
   AND BudgetMonth = 4;
+
+-- ============================================================
+-- SAVING GOAL CATEGORIES (canonical seed — merged from migration 002)
+-- ============================================================
+INSERT INTO SavingGoalCategories
+    (GoalCategoryID, CategoryKey, CategoryName, IconEmoji, Description, IsCustomAllowed, IsActive, SortOrder)
+VALUES
+    (1,  'EMERGENCY',    'Quỹ khẩn cấp',        '🛡️',  'Dự phòng rủi ro bất ngờ',              0, 1,  10),
+    (2,  'TRAVEL',       'Du lịch',               '✈️',  'Tiết kiệm cho chuyến đi',               0, 1,  20),
+    (3,  'HOME',         'Mua nhà / Thuê nhà',    '🏠',  'Tích lũy mua hoặc đặt cọc nhà',         0, 1,  30),
+    (4,  'CAR',          'Mua xe',                '🚗',  'Tích lũy mua xe hoặc trả góp xe',        0, 1,  40),
+    (5,  'EDUCATION',    'Giáo dục',              '🎓',  'Học phí, khóa học, nâng cao kỹ năng',    0, 1,  50),
+    (6,  'WEDDING',      'Đám cưới',              '💍',  'Chi phí tổ chức hôn lễ',                0, 1,  60),
+    (7,  'RETIREMENT',   'Hưu trí',               '👴',  'Tiết kiệm dài hạn cho tuổi hưu',         0, 1,  70),
+    (8,  'INVESTMENT',   'Đầu tư',                '📈',  'Tích lũy vốn đầu tư chứng khoán / BĐS',  0, 1,  80),
+    (9,  'GADGET',       'Thiết bị / Công nghệ',  '💻',  'Điện thoại, laptop, thiết bị thông minh',0, 1,  90),
+    (10, 'HEALTH',       'Sức khỏe',              '🏥',  'Bảo hiểm, khám định kỳ, phục hồi',       0, 1, 100),
+    (11, 'GIFT',         'Quà tặng / Từ thiện',   '🎁',  'Tích lũy cho dịp đặc biệt hoặc quyên góp',0, 1, 110),
+    (12, 'BUSINESS',     'Kinh doanh',            '💼',  'Vốn khởi nghiệp hoặc mở rộng',          0, 1, 120),
+    (13, 'CUSTOM',       'Mục tiêu tùy chỉnh',    '⭐',  'Tự đặt tên và mô tả mục tiêu',           1, 1, 130),
+    (14, 'OTHER',        'Khác',                  '💰',  'Mục tiêu không thuộc danh mục trên',     0, 1, 999);
+
+-- ============================================================
+-- SAVING GOALS — demo data (SAVE_UP) for user 10
+-- ============================================================
+INSERT INTO SavingGoals
+    (UserID, LinkedAccountID, GoalName, GoalType, GoalCategoryID, CustomGoalCategoryName,
+     TargetAmount, CurrentAmount, StartDate, TargetDate, AnnualGrowthRate, Status, Notes)
+VALUES
+    (10, 12, 'Quỹ khẩn cấp', 'SAVE_UP', 1, NULL,
+     30000000.00, 8500000.00,
+     DATE_SUB(CURDATE(), INTERVAL 4 MONTH), DATE_ADD(CURDATE(), INTERVAL 8 MONTH),
+     0.00, 'ACTIVE', 'Duy trì 3 tháng chi phí sinh hoạt.'),
+
+    (10, 12, 'Du lịch Nhật Bản', 'SAVE_UP', 2, NULL,
+     25000000.00, 6000000.00,
+     DATE_SUB(CURDATE(), INTERVAL 2 MONTH), DATE_ADD(CURDATE(), INTERVAL 10 MONTH),
+     0.00, 'ACTIVE', 'Chuyến đi Tokyo + Osaka tháng 3 năm sau.'),
+
+    (10, 12, 'Mua Laptop mới', 'SAVE_UP', 9, NULL,
+     22000000.00, 14000000.00,
+     DATE_SUB(CURDATE(), INTERVAL 3 MONTH), DATE_ADD(CURDATE(), INTERVAL 3 MONTH),
+     0.00, 'ACTIVE', 'MacBook Air M3.');
+
+-- ============================================================
+-- SAVING GOALS — PAY_DOWN demo (merged from migration 009)
+-- ============================================================
+INSERT INTO SavingGoals
+    (UserID, LinkedAccountID, GoalName, GoalType, GoalCategoryID, CustomGoalCategoryName,
+     TargetAmount, CurrentAmount, StartDate, TargetDate, AnnualGrowthRate, Status, Notes)
+SELECT
+    u.UserID,
+    ba.AccountID,
+    'Nợ thẻ tín dụng',
+    'PAY_DOWN',
+    14, -- OTHER
+    NULL,
+    18000000.00 + (u.UserID * 500000.00),
+    3500000.00  + (u.UserID * 200000.00),
+    DATE_SUB(CURDATE(), INTERVAL 2 MONTH),
+    DATE_ADD(CURDATE(), INTERVAL 8 MONTH),
+    0.00,
+    'ACTIVE',
+    'Mục tiêu giảm dần dư nợ thẻ tín dụng theo tháng.'
+FROM Users u
+JOIN (
+    SELECT UserID, MIN(AccountID) AS AccountID
+    FROM BankAccounts
+    GROUP BY UserID
+) ba ON ba.UserID = u.UserID
+WHERE NOT EXISTS (
+    SELECT 1 FROM SavingGoals g
+    WHERE g.UserID = u.UserID
+      AND g.GoalType = 'PAY_DOWN'
+      AND g.GoalName = 'Nợ thẻ tín dụng'
+);
+
+-- Khoản vay mua xe cho user 10
+INSERT INTO SavingGoals
+    (UserID, LinkedAccountID, GoalName, GoalType, GoalCategoryID, CustomGoalCategoryName,
+     TargetAmount, CurrentAmount, StartDate, TargetDate, AnnualGrowthRate, Status, Notes)
+SELECT
+    10,
+    ba.AccountID,
+    'Khoản vay mua xe',
+    'PAY_DOWN',
+    4, -- CAR
+    NULL,
+    90000000.00,
+    12000000.00,
+    DATE_SUB(CURDATE(), INTERVAL 3 MONTH),
+    DATE_ADD(CURDATE(), INTERVAL 24 MONTH),
+    0.00,
+    'ACTIVE',
+    'Khoản vay dài hạn, theo dõi tiến độ trả nợ định kỳ.'
+FROM (SELECT MIN(AccountID) AS AccountID FROM BankAccounts WHERE UserID = 10) ba
+WHERE ba.AccountID IS NOT NULL
+  AND NOT EXISTS (
+      SELECT 1 FROM SavingGoals g
+      WHERE g.UserID = 10
+        AND g.GoalType = 'PAY_DOWN'
+        AND g.GoalName = 'Khoản vay mua xe'
+  );
+
+-- ============================================================
+-- GOAL CONTRIBUTIONS — demo (merged from migration 009)
+-- ============================================================
+INSERT INTO GoalContributions (GoalID, UserID, AccountID, Amount, ContributionType, ContributionDate, Description)
+SELECT
+    g.GoalID, g.UserID, g.LinkedAccountID,
+    1200000.00, 'DEPOSIT',
+    DATE_SUB(CURDATE(), INTERVAL 20 DAY),
+    'Thanh toán nợ kỳ gần nhất'
+FROM SavingGoals g
+WHERE g.GoalType = 'PAY_DOWN' AND g.GoalName = 'Nợ thẻ tín dụng'
+  AND NOT EXISTS (
+      SELECT 1 FROM GoalContributions gc
+      WHERE gc.GoalID = g.GoalID AND gc.Description = 'Thanh toán nợ kỳ gần nhất'
+  );
+
+INSERT INTO GoalContributions (GoalID, UserID, AccountID, Amount, ContributionType, ContributionDate, Description)
+SELECT
+    g.GoalID, g.UserID, g.LinkedAccountID,
+    2500000.00, 'DEPOSIT',
+    DATE_SUB(CURDATE(), INTERVAL 10 DAY),
+    'Thanh toán trả nợ khoản vay xe'
+FROM SavingGoals g
+WHERE g.GoalType = 'PAY_DOWN' AND g.GoalName = 'Khoản vay mua xe' AND g.UserID = 10
+  AND NOT EXISTS (
+      SELECT 1 FROM GoalContributions gc
+      WHERE gc.GoalID = g.GoalID AND gc.Description = 'Thanh toán trả nợ khoản vay xe'
+  );
+
