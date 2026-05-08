@@ -10,7 +10,8 @@ services:
     container_name: personal_finance_mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env.docker}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
+      MYSQL_ROOT_HOST: "%"
       MYSQL_DATABASE: Personal_Finance
       MYSQL_INITDB_SKIP_TZINFO: 1
     ports:
@@ -36,8 +37,8 @@ services:
     environment:
       MYSQL_HOST: db
       MYSQL_PORT: 3306
-      MYSQL_USER: root
-      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_USER: ${MYSQL_APP_USER:-pf_app}
+      MYSQL_PASSWORD: ${MYSQL_APP_PASSWORD}
       MYSQL_DATABASE: Personal_Finance
       BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS:-http://localhost:3000}
 
@@ -76,6 +77,9 @@ services:
       MYSQL_USER: root
       MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: Personal_Finance
+    volumes:
+      - ./database:/app/database:ro
+      - ./ops:/app/ops:ro
     command: ["sh", "ops/docker/reset_database.sh"]
 
   db-apply-views:
@@ -91,6 +95,9 @@ services:
       MYSQL_USER: root
       MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: Personal_Finance
+    volumes:
+      - ./database:/app/database:ro
+      - ./ops:/app/ops:ro
     command: ["sh", "ops/docker/apply_views.sh"]
 
   bootstrap-admin:
@@ -103,8 +110,8 @@ services:
     environment:
       MYSQL_HOST: db
       MYSQL_PORT: 3306
-      MYSQL_USER: root
-      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_USER: ${MYSQL_APP_USER:-pf_app}
+      MYSQL_PASSWORD: ${MYSQL_APP_PASSWORD}
       MYSQL_DATABASE: Personal_Finance
       PF_ADMIN_EMAIL: ${PF_ADMIN_EMAIL}
       PF_ADMIN_PASSWORD: ${PF_ADMIN_PASSWORD}
@@ -114,6 +121,9 @@ services:
       PF_ADMIN_RECOVERY_ANSWER: ${PF_ADMIN_RECOVERY_ANSWER:-}
       PF_SEED_SAMPLE_USER_PASSWORD: ${PF_SEED_SAMPLE_USER_PASSWORD:-}
       PF_FORCE_RESET_SAMPLE_PASSWORDS: ${PF_FORCE_RESET_SAMPLE_PASSWORDS:-false}
+    volumes:
+      - ./ops:/app/ops:ro
+      - ./python_app:/app/python_app:ro
     command: ["python", "ops/bootstrap_auth.py"]
 
   smoke-test:
@@ -126,13 +136,15 @@ services:
     environment:
       MYSQL_HOST: db
       MYSQL_PORT: 3306
-      MYSQL_USER: root
-      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_USER: ${MYSQL_APP_USER:-pf_app}
+      MYSQL_PASSWORD: ${MYSQL_APP_PASSWORD}
       MYSQL_DATABASE: Personal_Finance
       SMOKE_ADMIN_EMAIL: ${SMOKE_ADMIN_EMAIL}
       SMOKE_ADMIN_PASSWORD: ${SMOKE_ADMIN_PASSWORD}
       AUTH_DEV_MODE: ${AUTH_DEV_MODE:-false}
       AUTH_LOG_OTP_IN_DEV: ${AUTH_LOG_OTP_IN_DEV:-false}
+    volumes:
+      - ./python_app:/app/python_app:ro
     command: ["python", "python_app/smoke_test.py"]
 
 volumes:
