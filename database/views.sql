@@ -176,8 +176,15 @@ SELECT
     t.SortOrder,
     t.ReferenceID,
     t.AmountSigned,
+    -- Per-account running balance (dùng cho bảng chi tiết lịch sử từng tài khoản)
     SUM(t.AmountSigned) OVER (
         PARTITION BY t.UserID, t.AccountID
+        ORDER BY t.TransactionDate, t.SortOrder, t.ReferenceID
+        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS AccountRunningBalance,
+    -- Net worth tổng hợp tất cả tài khoản (dùng cho biểu đồ Giá trị tài sản ròng)
+    SUM(t.AmountSigned) OVER (
+        PARTITION BY t.UserID
         ORDER BY t.TransactionDate, t.SortOrder, t.ReferenceID
         ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
     ) AS RunningBalance
