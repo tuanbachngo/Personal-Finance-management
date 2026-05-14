@@ -6,7 +6,7 @@ Personal Finance Management System is the main project name. The deployed web ap
 This project was developed as the final assignment for the **Database Management Systems** course at National Economics University (NEU). It aims to demonstrate comprehensive database design, implementation of business logic via SQL (views, procedures, triggers), and integration with a modern full-stack application.
 
 ## Dashboard Preview
-![Dashboard Preview](docs/figures/dashboard_after_login.png)
+![Dashboard Preview](docs/figures/readme.png)
 
 The system uses MySQL + Python service layer, with:
 
