@@ -1,4 +1,4 @@
-# Personal Finance Management System (Personal_Finance)
+﻿# Personal Finance Management System (Personal_Finance)
 
 Personal Finance Management System is the main project name. The deployed web application is branded as **Vault**.
 
@@ -359,3 +359,70 @@ Migrations:
   - Website: `https://vaulted.up.railway.app/login`
   - Video: `https://youtu.be/eOIub3bRHTI`
 - Do not rename database `Personal_Finance`.
+
+## 💡 Quick SQL Examples
+
+Below are some sample SQL queries to verify reporting data and business logic directly within the database:
+
+<details>
+<summary><b>1. Monthly Income, Expense, and Net Saving Statistics</b></summary>
+
+This query combines data from both the Income and Expenses tables to provide an overview of cash flow over time.
+
+```sql
+SELECT
+    YearMonth,
+    SUM(TotalIncome) AS MonthlyIncome,
+    SUM(TotalExpense) AS MonthlyExpense,
+    SUM(TotalIncome) - SUM(TotalExpense) AS NetSaving
+FROM (
+    SELECT DATE_FORMAT(IncomeDate, '%Y-%m') AS YearMonth, SUM(Amount) AS TotalIncome, 0 AS TotalExpense FROM Income GROUP BY 1
+    UNION ALL
+    SELECT DATE_FORMAT(ExpenseDate, '%Y-%m') AS YearMonth, 0 AS TotalIncome, SUM(Amount) AS TotalExpense FROM Expenses GROUP BY 1
+) AS MonthlyData
+GROUP BY YearMonth
+ORDER BY YearMonth DESC;
+```
+</details>
+
+<details>
+<summary><b>2. Top Spending Category for Each User</b></summary>
+
+Utilizes a **Window Function (ROW_NUMBER)** to identify the category where each user spends the most money.
+
+```sql
+SELECT UserID, UserName, CategoryName, TotalSpent
+FROM (
+    SELECT
+        u.UserID, u.UserName, c.CategoryName, SUM(e.Amount) AS TotalSpent,
+        ROW_NUMBER() OVER (PARTITION BY u.UserID ORDER BY SUM(e.Amount) DESC) AS rn
+    FROM Users u
+    JOIN Expenses e ON u.UserID = e.UserID
+    JOIN ExpenseCategories c ON e.CategoryID = c.CategoryID
+    GROUP BY u.UserID, u.UserName, c.CategoryName
+) ranked
+WHERE rn = 1;
+```
+</details>
+
+<details>
+<summary><b>3. Data Integrity Check (Calculated vs. Stored Balance)</b></summary>
+
+Compares the actual balance stored in the BankAccounts table with the total balance calculated from transaction history.
+
+```sql
+SELECT
+    ba.AccountID,
+    u.UserName,
+    b.BankName,
+    (COALESCE(i.TotalIncome, 0) - COALESCE(e.TotalExpense, 0)) AS CalculatedBalance,
+    ba.Balance AS StoredBalance
+FROM BankAccounts ba
+JOIN Users u ON ba.UserID = u.UserID
+JOIN Banks b ON b.BankID = ba.BankID
+LEFT JOIN (SELECT UserID, AccountID, SUM(Amount) AS TotalIncome FROM Income GROUP BY 1, 2) i 
+    ON ba.UserID = i.UserID AND ba.AccountID = i.AccountID
+LEFT JOIN (SELECT UserID, AccountID, SUM(Amount) AS TotalExpense FROM Expenses GROUP BY 1, 2) e 
+    ON ba.UserID = e.UserID AND ba.AccountID = e.AccountID;
+```
+</details>
