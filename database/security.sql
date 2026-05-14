@@ -27,3 +27,5 @@ SHOW GRANTS FOR 'pf_app'@'%';
 -- Backup/Recovery note:
 -- Backup and restore are usually handled with mysqldump or MySQL Workbench tools.
 -- This file focuses only on account creation and privilege management.
+
+
