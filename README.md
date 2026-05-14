@@ -334,7 +334,6 @@ Main SQL files:
 - `database/functions.sql`
 - `database/triggers.sql`
 - `database/security.sql`
-- `database/queries.sql`
 
 Migrations:
 
